@@ -13,8 +13,8 @@ on:
       - '.github/workflows/backend-ci.yml'
 
 env:
-  AWS_REGION: us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
 
 jobs:
   lint-and-test:
@@ -23,7 +23,7 @@ jobs:
     
     strategy:
       matrix:
-        service: [api-gateway]
+        service: [api-gateway, detection-api, threat-intel, extension-api, sandbox-service]
     
     steps:
       - name: Checkout code
@@ -57,7 +57,13 @@ jobs:
       matrix:
         service:
           - api-gateway
-          - ml-services
+          - detection-api
+          - threat-intel
+          - extension-api
+          - sandbox-service
+          - nlp-service
+          - url-service
+          - visual-service
     
     steps:
       - name: Checkout code
@@ -80,7 +86,13 @@ jobs:
           ECR_REPOSITORY: phishing-detection-${{ matrix.service }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest backend/${{ matrix.service }}/
+          if [[ "${{ matrix.service }}" == "nlp-service" || "${{ matrix.service }}" == "url-service" || "${{ matrix.service }}" == "visual-service" ]]; then
+            docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest backend/ml-services/${{ matrix.service }}/
+          elif [[ "${{ matrix.service }}" == "detection-api" || "${{ matrix.service }}" == "threat-intel" || "${{ matrix.service }}" == "extension-api" || "${{ matrix.service }}" == "sandbox-service" ]]; then
+            docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest backend/core-services/${{ matrix.service }}/
+          else
+            docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest backend/${{ matrix.service }}/
+          fi
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
@@ -94,7 +106,13 @@ jobs:
       matrix:
         service:
           - api-gateway
-          - ml-services
+          - detection-api
+          - threat-intel
+          - extension-api
+          - sandbox-service
+          - nlp-service
+          - url-service
+          - visual-service
     
     steps:
       - name: Checkout code

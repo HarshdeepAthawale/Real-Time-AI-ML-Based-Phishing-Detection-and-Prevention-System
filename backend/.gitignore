@@ -14,12 +14,30 @@ dist/
 build/
 *.tsbuildinfo
 
-# Environment variables
+# Environment variables - ignore all except .env.example
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
+.env.test
+!.env.example
+
+# Terraform sensitive files
 *.tfvars
 !*.tfvars.example
+backend.tfvars
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# AWS credentials and secrets
+.aws/
+*.pem
+*.key
+*.crt
+*-credentials.json
 
 # IDE
 .vscode/
@@ -39,11 +57,6 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.*
-.terraform.lock.hcl
 
 # Docker
 docker-compose.override.yml
@@ -56,3 +69,20 @@ coverage/
 tmp/
 temp/
 *.tmp
+
+# AWS credentials and secrets
+.aws/
+*.pem
+*.key
+*.crt
+*-credentials.json
+
+# Backup files
+*.backup
+*.backup2
+*.bak
+
+# Backup files
+*.backup
+*.backup2
+*.bak

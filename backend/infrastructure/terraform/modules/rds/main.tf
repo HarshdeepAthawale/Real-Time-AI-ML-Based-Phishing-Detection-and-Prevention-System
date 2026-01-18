@@ -73,16 +73,12 @@ resource "aws_db_subnet_group" "main" {
 # DB Parameter Group
 resource "aws_db_parameter_group" "main" {
   name   = "phishing-detection-db-params-${var.environment}"
-  family = "postgres15"
+  family = "postgres16"
 
   parameter {
     name  = "max_connections"
+    apply_method = "pending-reboot"
     value = "100"
-  }
-
-  parameter {
-    name  = "shared_buffers"
-    value = "{DBInstanceClassMemory*1/4}"
   }
 
   tags = merge(
@@ -97,7 +93,7 @@ resource "aws_db_parameter_group" "main" {
 resource "aws_db_instance" "main" {
   identifier             = "phishing-detection-db-${var.environment}"
   engine                 = "postgres"
-  engine_version         = "15.4"
+  engine_version         = "16.11"
   instance_class         = var.db_instance_class
   allocated_storage      = 20
   max_allocated_storage  = 100
@@ -118,7 +114,6 @@ resource "aws_db_instance" "main" {
   maintenance_window     = "mon:04:00-mon:05:00"
 
   skip_final_snapshot    = var.environment != "prod"
-  final_snapshot_identifier = var.environment == "prod" ? "phishing-detection-db-final-${var.environment}-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
 
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
   

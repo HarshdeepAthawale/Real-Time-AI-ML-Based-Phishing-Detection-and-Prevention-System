@@ -1,0 +1,92 @@
+{
+  "alb_arn": {
+    "sensitive": false,
+    "type": "string",
+    "value": "arn:aws:elasticloadbalancing:ap-south-1:185236887965:loadbalancer/app/phishing-detection-alb-dev/10e4504cd73ea616"
+  },
+  "alb_dns_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "phishing-detection-alb-dev-1936152040.ap-south-1.elb.amazonaws.com"
+  },
+  "db_endpoint": {
+    "sensitive": true,
+    "type": "string",
+    "value": "phishing-detection-db-dev.c5gwoscgebuq.ap-south-1.rds.amazonaws.com:5432"
+  },
+  "db_host": {
+    "sensitive": false,
+    "type": "string",
+    "value": "phishing-detection-db-dev.c5gwoscgebuq.ap-south-1.rds.amazonaws.com"
+  },
+  "ecs_cluster_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "arn:aws:ecs:ap-south-1:185236887965:cluster/phishing-detection-cluster-dev"
+  },
+  "ecs_cluster_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "phishing-detection-cluster-dev"
+  },
+  "private_subnet_ids": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "subnet-0b2b16ec0e991d30a",
+      "subnet-0d4275e766e620848",
+      "subnet-009d28665377c79d2"
+    ]
+  },
+  "public_subnet_ids": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "subnet-0df6fd8c8533d0f31",
+      "subnet-06b41e7196ea1b2b0",
+      "subnet-0377017376c46f130"
+    ]
+  },
+  "redis_port": {
+    "sensitive": false,
+    "type": "number",
+    "value": 6379
+  },
+  "s3_buckets": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "artifacts": "string",
+        "logs": "string",
+        "models": "string",
+        "training": "string"
+      }
+    ],
+    "value": {
+      "artifacts": "phishing-detection-artifacts-dev",
+      "logs": "phishing-detection-logs-dev",
+      "models": "phishing-detection-models-dev",
+      "training": "phishing-detection-training-data-dev"
+    }
+  },
+  "vpc_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "vpc-0b70d6de977c72670"
+  }
+}

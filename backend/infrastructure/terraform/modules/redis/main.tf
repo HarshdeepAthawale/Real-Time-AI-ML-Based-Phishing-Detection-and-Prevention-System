@@ -81,7 +81,6 @@ resource "aws_elasticache_replication_group" "main" {
 
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
-  auth_token_enabled         = var.environment == "prod"
 
   automatic_failover_enabled = var.environment == "prod"
   multi_az_enabled          = var.environment == "prod"
@@ -100,7 +99,7 @@ resource "aws_elasticache_replication_group" "main" {
 # Outputs
 output "redis_endpoint" {
   description = "Redis endpoint"
-  value       = aws_elasticache_replication_group.main.configuration_endpoint_address
+  value       = aws_elasticache_replication_group.main.primary_endpoint_address
 }
 
 output "redis_primary_endpoint" {

@@ -46,6 +46,7 @@ export const routeConfig = {
   '/api/v1/nlp': 'nlp-service',
   '/api/v1/url': 'url-service',
   '/api/v1/visual': 'visual-service'
+  // WebSocket route handled separately in routes/index.ts
 };
 
 export const rateLimitConfig = {

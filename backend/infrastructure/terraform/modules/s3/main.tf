@@ -57,6 +57,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "models" {
     id     = "delete-old-versions"
     status = "Enabled"
 
+    filter {
+      prefix = ""
+    }
+
     noncurrent_version_expiration {
       noncurrent_days = 90
     }
@@ -130,6 +134,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
     id     = "transition-to-glacier"
     status = "Enabled"
 
+    filter {
+      prefix = ""
+    }
+
     transition {
       days          = 30
       storage_class = "GLACIER"
@@ -177,6 +185,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
   rule {
     id     = "delete-old-versions"
     status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
 
     noncurrent_version_expiration {
       noncurrent_days = 30

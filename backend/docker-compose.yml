@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: phishing_detection
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -53,6 +53,8 @@ services:
       - NLP_SERVICE_URL=http://nlp-service:8000
       - URL_SERVICE_URL=http://url-service:8000
       - VISUAL_SERVICE_URL=http://visual-service:8000
+      - DETECTION_API_URL=http://detection-api:3001
+      - THREAT_INTEL_URL=http://threat-intel:3002
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +65,139 @@ services:
     volumes:
       - ./api-gateway:/app
       - /app/node_modules
+
+  nlp-service:
+    build: ./ml-services/nlp-service
+    ports:
+      - "8001:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/phishing_detection
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  url-service:
+    build: ./ml-services/url-service
+    ports:
+      - "8002:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URL=mongodb://mongodb:27017/phishing_detection
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
+  visual-service:
+    build: ./ml-services/visual-service
+    ports:
+      - "8003:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  detection-api:
+    build: ./core-services/detection-api
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/phishing_detection
+      - REDIS_URL=redis://redis:6379
+      - NLP_SERVICE_URL=http://nlp-service:8000
+      - URL_SERVICE_URL=http://url-service:8000
+      - VISUAL_SERVICE_URL=http://visual-service:8000
+      - LOG_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nlp-service:
+        condition: service_started
+      url-service:
+        condition: service_started
+      visual-service:
+        condition: service_started
+
+  threat-intel:
+    build: ./core-services/threat-intel
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/phishing_detection
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  learning-pipeline:
+    build: ./core-services/learning-pipeline
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/phishing_detection
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  extension-api:
+    build: ./core-services/extension-api
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=development
+      - REDIS_URL=redis://redis:6379
+      - DETECTION_API_URL=http://detection-api:3001
+      - LOG_LEVEL=info
+    depends_on:
+      redis:
+        condition: service_healthy
+      detection-api:
+        condition: service_started
+
+  sandbox-service:
+    build: ./core-services/sandbox-service
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=development
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:

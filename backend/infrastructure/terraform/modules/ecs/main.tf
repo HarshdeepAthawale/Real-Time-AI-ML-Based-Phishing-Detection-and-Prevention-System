@@ -20,43 +20,51 @@ variable "security_group_id" {
   type        = string
 }
 
+variable "certificate_arn" {
+  description = "ACM certificate ARN for HTTPS (optional)"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Common tags"
   type        = map(string)
   default     = {}
 }
 
-# ECS Cluster
-resource "aws_ecs_cluster" "main" {
-  name = "phishing-detection-cluster-${var.environment}"
-
-  setting {
-    name  = "containerInsights"
-    value = "enabled"
-  }
-
-  tags = merge(
-    var.tags,
-    {
-      Name = "phishing-detection-cluster-${var.environment}"
-    }
-  )
+# CloudWatch Log Groups for each service
+resource "aws_cloudwatch_log_group" "api_gateway" {
+  name              = "/phishing-detection/api-gateway-${var.environment}"
+  retention_in_days = var.environment == "prod" ? 30 : 7
+  tags              = var.tags
 }
 
-# CloudWatch Log Group
+resource "aws_cloudwatch_log_group" "detection_api" {
+  name              = "/phishing-detection/detection-api-${var.environment}"
+  retention_in_days = var.environment == "prod" ? 30 : 7
+  tags              = var.tags
+}
+
+resource "aws_cloudwatch_log_group" "ml_services" {
+  name              = "/phishing-detection/ml-services-${var.environment}"
+  retention_in_days = var.environment == "prod" ? 30 : 7
+  tags              = var.tags
+}
+
+resource "aws_cloudwatch_log_group" "threat_intel" {
+  name              = "/phishing-detection/threat-intel-${var.environment}"
+  retention_in_days = var.environment == "prod" ? 30 : 7
+  tags              = var.tags
+}
+
+# General ECS log group (for other services)
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/phishing-detection-${var.environment}"
   retention_in_days = var.environment == "prod" ? 30 : 7
-
-  tags = merge(
-    var.tags,
-    {
-      Name = "phishing-detection-ecs-logs-${var.environment}"
-    }
-  )
+  tags              = var.tags
 }
 
-# IAM Role for ECS Tasks
+# IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_task_execution" {
   name = "phishing-detection-ecs-task-execution-${var.environment}"
 
@@ -126,6 +134,18 @@ resource "aws_iam_role_policy" "s3_access" {
   })
 }
 
+# ECS Cluster
+resource "aws_ecs_cluster" "main" {
+  name = "phishing-detection-cluster-${var.environment}"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+
+  tags = var.tags
+}
+
 # Application Load Balancer
 resource "aws_lb" "main" {
   name               = "phishing-detection-alb-${var.environment}"
@@ -136,17 +156,12 @@ resource "aws_lb" "main" {
 
   enable_deletion_protection = var.environment == "prod"
 
-  tags = merge(
-    var.tags,
-    {
-      Name = "phishing-detection-alb-${var.environment}"
-    }
-  )
+  tags = var.tags
 }
 
 # Target Group for API Gateway
 resource "aws_lb_target_group" "api_gateway" {
-  name        = "phishing-detection-api-gateway-${var.environment}"
+  name        = "pd-api-gw-${var.environment}"
   port        = 3000
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
@@ -155,7 +170,7 @@ resource "aws_lb_target_group" "api_gateway" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
-    unhealthy_threshold = 2
+    unhealthy_threshold = 3
     timeout             = 5
     interval            = 30
     path                = "/health"
@@ -163,31 +178,26 @@ resource "aws_lb_target_group" "api_gateway" {
     matcher             = "200"
   }
 
-  tags = merge(
-    var.tags,
-    {
-      Name = "phishing-detection-api-gateway-tg-${var.environment}"
-    }
-  )
+  tags = var.tags
 }
 
-# ALB Listener
+# ALB Listener - Use HTTP for dev, HTTPS for prod
 resource "aws_lb_listener" "main" {
   load_balancer_arn = aws_lb.main.arn
-  port              = "443"
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = var.environment == "prod" ? var.certificate_arn : null
+  port              = var.environment == "prod" ? "443" : "80"
+  protocol          = var.environment == "prod" ? "HTTPS" : "HTTP"
+  ssl_policy        = var.environment == "prod" ? "ELBSecurityPolicy-TLS13-1-2-2021-06" : null
+  certificate_arn   = var.environment == "prod" && var.certificate_arn != "" ? var.certificate_arn : null
 
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api_gateway.arn
   }
-
 }
 
-# HTTP to HTTPS redirect
+# HTTP to HTTPS redirect (only for prod)
 resource "aws_lb_listener" "http_redirect" {
+  count             = var.environment == "prod" ? 1 : 0
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
   protocol          = "HTTP"
@@ -202,50 +212,33 @@ resource "aws_lb_listener" "http_redirect" {
   }
 }
 
-variable "certificate_arn" {
-  description = "ACM certificate ARN for HTTPS"
-  type        = string
-  default     = ""
-}
-
 # Service Discovery Namespace
+# Note: Ensure IAM user has servicediscovery:TagResource permission
+# If permission issues occur, tags are set to empty map
 resource "aws_service_discovery_private_dns_namespace" "main" {
-  name        = "phishing-detection.${var.environment}.local"
+  name        = "phishing-detection-${var.environment}.local"
   description = "Service discovery namespace for Real-Time-AI-ML-Based-Phishing-Detection-and-Prevention-System"
   vpc         = var.vpc_id
-
-  tags = merge(
-    var.tags,
-    {
-      Name = "phishing-detection-namespace-${var.environment}"
-    }
-  )
+  
+  # Use empty tags map to avoid TagResource permission issues
+  # Default tags will still be applied via provider default_tags
+  tags = {}
+  
+  lifecycle {
+    # Ignore changes to tags_all to prevent permission issues
+    ignore_changes = [tags_all]
+  }
 }
 
 # Outputs
-output "cluster_id" {
-  description = "ECS cluster ID"
-  value       = aws_ecs_cluster.main.id
-}
-
 output "cluster_name" {
   description = "ECS cluster name"
   value       = aws_ecs_cluster.main.name
 }
 
-output "task_execution_role_arn" {
-  description = "ECS task execution role ARN"
-  value       = aws_iam_role.ecs_task_execution.arn
-}
-
-output "task_role_arn" {
-  description = "ECS task role ARN"
-  value       = aws_iam_role.ecs_task.arn
-}
-
-output "alb_arn" {
-  description = "Application Load Balancer ARN"
-  value       = aws_lb.main.arn
+output "cluster_id" {
+  description = "ECS cluster ID"
+  value       = aws_ecs_cluster.main.id
 }
 
 output "alb_dns_name" {
@@ -253,12 +246,17 @@ output "alb_dns_name" {
   value       = aws_lb.main.dns_name
 }
 
-output "api_gateway_target_group_arn" {
-  description = "API Gateway target group ARN"
-  value       = aws_lb_target_group.api_gateway.arn
+output "alb_arn" {
+  description = "Application Load Balancer ARN"
+  value       = aws_lb.main.arn
 }
 
 output "service_discovery_namespace_id" {
-  description = "Service discovery namespace ID"
+  description = "Service Discovery namespace ID"
   value       = aws_service_discovery_private_dns_namespace.main.id
+}
+
+output "service_discovery_namespace_arn" {
+  description = "Service Discovery namespace ARN"
+  value       = aws_service_discovery_private_dns_namespace.main.arn
 }

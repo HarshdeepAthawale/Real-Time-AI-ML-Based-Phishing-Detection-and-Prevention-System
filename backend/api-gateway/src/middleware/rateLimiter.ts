@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { rateLimitConfig } from '../config/gateway';
 
@@ -7,7 +7,7 @@ export const rateLimiter = rateLimit({
   keyGenerator: (req: Request) => {
     // Use API key for rate limiting if available
     const apiKey = req.headers['x-api-key'] as string;
-    return apiKey || req.ip;
+    return apiKey || req.ip || 'unknown';
   },
   handler: (req: Request, res: Response) => {
     res.status(429).json({
