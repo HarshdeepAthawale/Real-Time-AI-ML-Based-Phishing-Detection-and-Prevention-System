@@ -1,0 +1,23 @@
+{
+  "name": "@phishing-detection/shared",
+  "version": "1.0.0",
+  "description": "Shared utilities and types for Real-Time-AI-ML-Based-Phishing-Detection-and-Prevention-System",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "bcrypt": "^5.1.1",
+    "winston": "^3.11.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@types/bcrypt": "^5.0.2",
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,16 @@
+# Production Environment Variables
+# Copy this file to prod.tfvars and fill in the values
+
+aws_region        = "us-east-1"
+environment       = "prod"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+# Database
+db_password       = "CHANGE_ME_STRONG_PASSWORD"
+db_instance_class = "db.r5.large"
+
+# Redis
+redis_node_type   = "cache.r6g.large"
+
+# SSL Certificate (required for prod)
+certificate_arn   = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID"

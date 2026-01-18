@@ -1,0 +1,16 @@
+# Development Environment Variables
+# Copy this file to dev.tfvars and fill in the values
+
+aws_region        = "us-east-1"
+environment       = "dev"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+# Database
+db_password       = "CHANGE_ME_STRONG_PASSWORD"
+db_instance_class = "db.t3.medium"
+
+# Redis
+redis_node_type   = "cache.t3.micro"
+
+# SSL Certificate (optional for dev)
+certificate_arn   = ""
