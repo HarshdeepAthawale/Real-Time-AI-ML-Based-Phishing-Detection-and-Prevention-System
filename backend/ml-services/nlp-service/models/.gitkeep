@@ -1,0 +1,5 @@
+# Placeholder for model files
+# Models should be placed in subdirectories:
+# - phishing-bert-v1/
+# - ai-detector-v1/
+# - embeddings/

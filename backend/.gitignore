@@ -1,13 +1,25 @@
 # Dependencies
 node_modules/
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+*.egg-info/
+dist/
+*.egg
+
+# Python virtual environments (comprehensive coverage)
 venv/
+.venv/
 env/
 ENV/
+virtualenv/
+.virtualenv/
+*venv/
+*env/
 
 # Build outputs
 dist/
@@ -82,7 +94,15 @@ temp/
 *.backup2
 *.bak
 
-# Backup files
-*.backup
-*.backup2
-*.bak
+# ML Services - Datasets and Models
+# Ignore all dataset directories in ML services
+ml-services/**/data/
+
+# Ignore all contents in model directories (but keep .gitkeep files)
+ml-services/**/models/**
+!ml-services/**/models/
+!ml-services/**/models/.gitkeep
+
+# Ignore CSV dataset files in ML services
+ml-services/**/*.csv
+!ml-services/**/*.csv.example

@@ -1,11 +1,43 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
-httpx==0.25.2
-redis==5.0.1
-psycopg2-binary==2.9.9
-transformers==4.36.2
-torch==2.1.1
-numpy==1.26.2
+# Web Framework
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# ML Libraries
+torch>=2.0.0
+transformers>=4.35.0
+sentence-transformers>=2.2.2
+onnxruntime>=1.16.0
+scikit-learn>=1.3.2
+
+# NLP Utilities
+nltk>=3.8.1
+spacy>=3.7.2
+email-validator>=2.1.0
+
+# Database & Cache
+psycopg2-binary>=2.9.9
+pymongo>=4.6.0
+redis>=5.0.1
+
+# Utilities
+python-multipart>=0.0.6
+aiofiles>=23.2.1
+python-dotenv>=1.0.0
+httpx>=0.25.2
+numpy>=1.26.2
+
+# Training dependencies
+datasets>=2.14.6
+pandas>=2.1.3
+
+# Hyperparameter optimization
+optuna>=3.0.0
+
+# HTTP requests for dataset downloads
+requests>=2.31.0
+
+# Visualization for evaluation
+matplotlib>=3.7.0
+seaborn>=0.12.0

@@ -18,6 +18,20 @@ yarn-error.log*
 
 # env files
 .env*
+!.env.example
+!*.env.example
+
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+virtualenv/
+.virtualenv/
+*.egg-info/
+__pycache__/
+*.py[cod]
+*$py.class
 
 # vercel
 .vercel
@@ -25,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ML Services - Datasets and Models
+# Ignore all dataset directories in ML services
+backend/ml-services/**/data/
+
+# Ignore all contents in model directories (but keep .gitkeep files)
+backend/ml-services/**/models/**
+!backend/ml-services/**/models/
+!backend/ml-services/**/models/.gitkeep
+
+# Ignore CSV dataset files in ML services
+backend/ml-services/**/*.csv
+!backend/ml-services/**/*.csv.example
