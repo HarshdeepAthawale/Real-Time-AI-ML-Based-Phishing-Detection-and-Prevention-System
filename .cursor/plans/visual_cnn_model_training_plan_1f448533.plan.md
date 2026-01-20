@@ -70,14 +70,15 @@ data/
     microsoft/
 ```
 
-### 1.3 Dataset Requirements
+### 1.3 Dataset Requirements (50 Images Plan)
 
-- **Minimum**: 50-100 images per brand (for initial testing)
-- **Recommended**: 200-500 images per brand (for production)
+- **Target**: 50 images per brand (quick test/development scenario)
+- **Number of Brands**: 5-10 brands (250-500 total images)
 - **Image Format**: PNG or JPEG
 - **Image Size**: 1920x1080 or similar (will be resized to 224x224)
-- **Balance**: Roughly equal distribution across brands
+- **Balance**: Roughly equal distribution (50 images per brand)
 - **Quality**: Clear, readable screenshots (no blur, proper lighting)
+- **Use Case**: Development/testing, workflow validation, quick model training
 
 ### 1.4 Dataset Collection Script
 
@@ -121,13 +122,15 @@ Update training script to support:
 
 ### 3.1 Training Parameters
 
-**Default Configuration** (for quick testing):
+**50 Images Plan Configuration** (quick testing with 50 images per brand):
 
-- Epochs: 10
-- Batch size: 32
-- Learning rate: 0.001
+- Epochs: 10-15 (may need more with small dataset)
+- Batch size: 16-32 (adjust based on GPU memory)
+- Learning rate: 0.001 (can reduce to 0.0005 if overfitting)
 - Optimizer: Adam
 - Loss: NLLLoss (for log_softmax output)
+- Early stopping: Stop if no improvement for 3-5 epochs
+- Data augmentation: More aggressive (to compensate for small dataset)
 
 **Production Configuration**:
 
@@ -167,16 +170,24 @@ Enhance `training/train_cnn_model.py`:
 
 ### 4.2 Training Commands
 
-**Quick Test** (small dataset):
+**50 Images Plan Training Command**:
 
 ```bash
 python training/train_cnn_model.py \
-  --data-dir ./data/train \
+  --data-dir ./data \
   --output-dir ./models/cnn-brand-classifier-v1 \
-  --epochs 5 \
+  --epochs 15 \
   --batch-size 16 \
-  --learning-rate 0.001
+  --learning-rate 0.001 \
+  --device auto
 ```
+
+**Note**: With 50 images per brand:
+
+- Training set: ~40 images per brand (80% split)
+- Validation set: ~10 images per brand (20% split)
+- Total training samples: ~200-400 images (for 5-10 brands)
+- Expected training time: 30-60 minutes (GPU) or 2-4 hours (CPU)
 
 **Production Training**:
 
@@ -303,30 +314,53 @@ flowchart TD
     I --> J[Monitor Performance]
 ```
 
-## Estimated Timeline
+## Estimated Timeline (50 Images Plan)
 
-- **Dataset Collection**: 1-2 days (manual) or 1 week (automated scraping)
-- **Dataset Validation**: 2-4 hours
-- **Training (Small Dataset)**: 30-60 minutes (GPU) or 2-4 hours (CPU)
-- **Training (Production Dataset)**: 2-6 hours (GPU) or 12-24 hours (CPU)
-- **Evaluation**: 1-2 hours
-- **Deployment**: 1 hour
+- **Dataset Collection**: 4-8 hours (manual) or 1-2 days (automated scraping)
+  - 50 images × 5-10 brands = 250-500 screenshots
+  - ~5-10 minutes per brand if automated
+- **Dataset Validation**: 1-2 hours
+- **Training**: 30-60 minutes (GPU) or 2-4 hours (CPU)
+  - Small dataset (250-500 images) trains quickly
+- **Evaluation**: 1 hour
+- **Deployment**: 30 minutes
 
-**Total**: 2-3 days for small dataset, 1-2 weeks for production dataset
+**Total**: 1-2 days for complete workflow (50 images plan)
 
-## Success Criteria
+## Success Criteria (50 Images Plan)
 
-- Validation accuracy > 85% for production model
+**Realistic Expectations for 50 Images per Brand**:
+
+- Validation accuracy: 60-75% (acceptable for small dataset)
+- Training accuracy may be higher (watch for overfitting)
 - Inference latency < 200ms on GPU, < 1s on CPU
-- Model correctly identifies top 3 brands with > 70% confidence
+- Model correctly identifies top 3 brands with > 50% confidence
 - Service successfully loads and uses trained model
-- No significant performance degradation in production
+- Model demonstrates learning (better than random chance)
 
-## Notes
+**Note**: With only 50 images per brand, expect:
 
-- Start with small dataset (5-10 brands, 50-100 images each) for testing
-- Scale up to production dataset after validating workflow
+- Lower accuracy than production model (which needs 200+ images)
+- Higher variance in results
+- Potential overfitting (train acc >> val acc)
+- This is acceptable for development/testing purposes
+- Can scale up to more images later for production
+
+## Notes (50 Images Plan)
+
+**This is a Development/Testing Scenario**:
+
+- 50 images per brand is sufficient to validate the training workflow
+- Model will learn basic brand patterns but may not generalize well
+- Use aggressive data augmentation to maximize learning from limited data
+- Monitor for overfitting - if train acc >> val acc, reduce epochs or increase regularization
+- This trained model can be used for development/testing but should be retrained with more data for production
+
+**Key Considerations**:
+
+- Start with 5-10 brands (250-500 total images) for quick validation
 - Use GPU if available for 10-20x speedup
-- Monitor training closely for first few epochs
-- Save checkpoints regularly to avoid losing progress
-- Test model on real phishing examples before production deployment
+- Monitor training closely - small datasets can overfit quickly
+- Save checkpoints regularly
+- After validating workflow, collect more images (200+ per brand) for production model
+- Test model on real phishing examples to validate it works end-to-end
