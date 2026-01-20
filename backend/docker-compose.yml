@@ -90,8 +90,11 @@ services:
     ports:
       - "8002:8000"
     environment:
+      - PORT=8000
       - REDIS_URL=redis://redis:6379
       - MONGODB_URL=mongodb://mongodb:27017/phishing_detection
+      - GNN_MODEL_PATH=./models/gnn-domain-classifier-v1/model.pt
+      - CORS_ORIGINS=*
       - LOG_LEVEL=info
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
