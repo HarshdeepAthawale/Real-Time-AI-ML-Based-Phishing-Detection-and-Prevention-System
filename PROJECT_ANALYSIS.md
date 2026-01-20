@@ -164,11 +164,15 @@ This is a **sophisticated microservices-based phishing detection system** built 
 - Phishing score calculation
 - ⚠️ **Status**: Rule-based, GNN models not yet integrated
 
-**4. Visual Service** (Basic Implementation)
-- FastAPI service with basic image analysis
-- PIL/Pillow integration for image processing
-- Basic feature extraction (brightness, contrast, dimensions)
-- ⚠️ **Status**: Rule-based, CNN models not yet integrated
+**4. Visual Service** (Phase 5 Complete)
+- FastAPI service with comprehensive visual analysis
+- Playwright-based headless browser rendering
+- Screenshot capture and DOM analysis
+- CNN model for brand impersonation detection (ResNet50-based)
+- Visual similarity matching using perceptual hashing
+- Form, CSS, and logo analysis
+- Comprehensive test coverage
+- ✅ **Status**: Phase 5 complete - All components implemented, CNN model training infrastructure ready
 
 **5. Detection API** (Orchestration Layer)
 - Express.js service orchestrating ML services
