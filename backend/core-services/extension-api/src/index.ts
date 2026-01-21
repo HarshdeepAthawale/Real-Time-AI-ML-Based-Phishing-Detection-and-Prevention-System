@@ -1,122 +1,238 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
-import axios from 'axios';
+import { config } from './config';
 import { logger } from './utils/logger';
-
-dotenv.config();
+import { CacheService } from './services/cache.service';
+import { PrivacyFilterService } from './services/privacy-filter.service';
+import { URLCheckerService } from './services/url-checker.service';
+import { EmailScannerService } from './services/email-scanner.service';
+import { extensionAuthMiddleware } from './middleware/extension-auth.middleware';
+import { createRateLimitMiddleware } from './middleware/rate-limit.middleware';
+import urlCheckRoutes from './routes/url-check.routes';
+import emailScanRoutes from './routes/email-scan.routes';
+import reportRoutes from './routes/report.routes';
+import emailClientRoutes from './routes/email-client.routes';
+import { EmailClientService } from './services/email-client.service';
+import { connectPostgreSQL, disconnectPostgreSQL, getPostgreSQL } from '../../shared/database';
 
 const app = express();
-const PORT = process.env.PORT || 3003;
 
-// Detection API URL
-const DETECTION_API_URL = process.env.DETECTION_API_URL || 'http://detection-api:3001';
+// Initialize services
+const cacheService = new CacheService();
+const privacyFilter = new PrivacyFilterService();
+const urlChecker = new URLCheckerService(
+  config.detectionApi.url,
+  cacheService,
+  privacyFilter
+);
+const emailScanner = new EmailScannerService(
+  config.detectionApi.url,
+  privacyFilter,
+  urlChecker
+);
+const emailClient = new EmailClientService();
 
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
+// Store services in app context for route access
+app.set('cacheService', cacheService);
+app.set('privacyFilter', privacyFilter);
+app.set('urlChecker', urlChecker);
+app.set('emailScanner', emailScanner);
+app.set('emailClient', emailClient);
 
-interface ExtensionCheckRequest {
-  url: string;
-  page_text?: string;
-  page_title?: string;
-  screenshot?: string; // base64 encoded
-}
+// Middleware
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' } // Allow extension origins
+}));
 
-interface ExtensionCheckResponse {
-  is_phishing: boolean;
-  confidence: number;
-  warning_message?: string;
-  details: any;
-  timestamp: string;
-}
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', service: 'extension-api' });
-});
-
-app.post('/api/v1/extension/check', async (req, res) => {
-  try {
-    const request: ExtensionCheckRequest = req.body;
-    
-    if (!request.url) {
-      return res.status(400).json({ error: 'URL is required' });
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, Postman, or curl)
+    if (!origin) {
+      return callback(null, true);
     }
     
-    // Call detection API
-    const detectionRequest: any = {
-      url: request.url
-    };
+    // Check if origin matches any allowed pattern
+    const allowedOrigins = config.cors.origin;
     
-    if (request.page_text) {
-      detectionRequest.text = request.page_text;
-    }
-    
-    if (request.screenshot) {
-      detectionRequest.image = request.screenshot;
-    }
-    
-    let detectionResult;
-    try {
-      const response = await axios.post(`${DETECTION_API_URL}/api/v1/detect`, detectionRequest);
-      detectionResult = response.data;
-    } catch (error: any) {
-      logger.error(`Detection API error: ${error.message}`);
-      // Return safe default if detection fails
-      detectionResult = {
-        is_phishing: false,
-        confidence: 0,
-        sources: {}
-      };
-    }
-    
-    const response: ExtensionCheckResponse = {
-      is_phishing: detectionResult.is_phishing || false,
-      confidence: detectionResult.overall_confidence || detectionResult.confidence || 0,
-      warning_message: detectionResult.is_phishing 
-        ? 'This page may be a phishing attempt. Proceed with caution.' 
-        : undefined,
-      details: {
-        url_analysis: detectionResult.sources?.url,
-        text_analysis: detectionResult.sources?.nlp,
-        visual_analysis: detectionResult.sources?.visual
-      },
-      timestamp: new Date().toISOString()
-    };
-    
-    res.json(response);
-  } catch (error: any) {
-    logger.error(`Extension check error: ${error.message}`);
-    res.status(500).json({ error: 'Extension check failed', message: error.message });
-  }
-});
-
-app.post('/api/v1/extension/report', async (req, res) => {
-  try {
-    const { url, reason, description } = req.body;
-    
-    // Report to threat intelligence service
-    try {
-      const threatIntelUrl = process.env.THREAT_INTEL_URL || 'http://threat-intel:3002';
-      await axios.post(`${threatIntelUrl}/api/v1/intelligence/report`, {
-        identifier: url,
-        threat_type: 'phishing',
-        confidence: 0.8,
-        description: `${reason}: ${description}`
+    if (Array.isArray(allowedOrigins)) {
+      // Check if origin matches any pattern (supports wildcards)
+      const isAllowed = allowedOrigins.some(pattern => {
+        if (pattern.includes('*')) {
+          const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+          return regex.test(origin);
+        }
+        return origin === pattern;
       });
-    } catch (error: any) {
-      logger.error(`Failed to report to threat intel: ${error.message}`);
+      
+      if (isAllowed) {
+        return callback(null, true);
+      }
+    } else if (allowedOrigins === '*') {
+      return callback(null, true);
     }
     
-    logger.info(`Phishing reported via extension: ${url}`);
-    res.json({ success: true, message: 'Report submitted successfully' });
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: config.cors.credentials
+}));
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Create rate limit middleware
+const rateLimitMiddleware = createRateLimitMiddleware(cacheService);
+
+// Health check endpoint (no auth required)
+app.get('/health', async (req, res) => {
+  try {
+    const cacheConnected = await cacheService.isConnected();
+    
+    // Check database connection
+    let dbConnected = false;
+    try {
+      const dataSource = getPostgreSQL();
+      dbConnected = dataSource.isInitialized;
+    } catch {
+      dbConnected = false;
+    }
+    
+    res.json({
+      status: 'healthy',
+      service: 'extension-api',
+      cache: cacheConnected ? 'connected' : 'disconnected',
+      database: dbConnected ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString()
+    });
   } catch (error: any) {
-    logger.error(`Report error: ${error.message}`);
-    res.status(500).json({ error: 'Report failed', message: error.message });
+    logger.error('Health check error', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      service: 'extension-api',
+      error: error.message
+    });
   }
 });
 
-app.listen(PORT, () => {
-  logger.info(`Extension API service running on port ${PORT}`);
+// API routes with authentication and rate limiting
+app.use(
+  '/api/v1/extension/check-url',
+  extensionAuthMiddleware,
+  rateLimitMiddleware,
+  urlCheckRoutes
+);
+
+app.use(
+  '/api/v1/extension/scan-email',
+  extensionAuthMiddleware,
+  rateLimitMiddleware,
+  emailScanRoutes
+);
+
+app.use(
+  '/api/v1/extension/report',
+  extensionAuthMiddleware,
+  rateLimitMiddleware,
+  reportRoutes
+);
+
+app.use(
+  '/api/v1/extension/email',
+  extensionAuthMiddleware,
+  rateLimitMiddleware,
+  emailClientRoutes
+);
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    service: 'Extension API Service',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      checkUrl: '/api/v1/extension/check-url',
+      scanEmail: '/api/v1/extension/scan-email',
+      report: '/api/v1/extension/report',
+      email: '/api/v1/extension/email'
+    }
+  });
 });
+
+// Error handling middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  logger.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path
+  });
+  
+  res.status(err.status || 500).json({
+    error: {
+      message: err.message || 'Internal server error',
+      statusCode: err.status || 500
+    }
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: {
+      message: 'Endpoint not found',
+      statusCode: 404
+    }
+  });
+});
+
+// Graceful shutdown
+const shutdown = async () => {
+  logger.info('Shutting down gracefully...');
+  
+  try {
+    await emailClient.disconnectAll();
+    logger.info('Email client disconnected');
+  } catch (error: any) {
+    logger.error('Error disconnecting email client', error);
+  }
+  
+  try {
+    await cacheService.disconnect();
+    logger.info('Cache service disconnected');
+  } catch (error: any) {
+    logger.error('Error disconnecting cache', error);
+  }
+  
+  try {
+    await disconnectPostgreSQL();
+    logger.info('Database disconnected');
+  } catch (error: any) {
+    logger.error('Error disconnecting database', error);
+  }
+  
+  process.exit(0);
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+// Initialize database connection and start server
+(async () => {
+  try {
+    // Connect to database (fail fast if unavailable per requirement)
+    await connectPostgreSQL();
+    logger.info('Database connection established');
+  } catch (error: any) {
+    logger.error('Failed to connect to database', error);
+    logger.error('Service will fail fast as database is required');
+    process.exit(1);
+  }
+  
+  // Start server
+  const PORT = config.port;
+  app.listen(PORT, () => {
+    logger.info(`Extension API service running on port ${PORT}`);
+    logger.info(`Environment: ${config.nodeEnv}`);
+    logger.info(`Detection API: ${config.detectionApi.url}`);
+    logger.info(`Threat Intel: ${config.threatIntel.url}`);
+  });
+})();
