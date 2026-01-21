@@ -1,138 +1,153 @@
 import dotenv from 'dotenv';
+import { S3Client } from '@aws-sdk/client-s3';
+import { ECSClient } from '@aws-sdk/client-ecs';
+import { connectPostgreSQL, connectAllDatabases, disconnectAllDatabases } from '../../../shared/database/connection';
+import { config } from '../../../shared/config';
 import { logger } from './utils/logger';
-import cron from 'node-cron';
+
+// Services
+import { DataCollectorService } from './services/data-collector.service';
+import { FeatureStoreService } from './services/feature-store.service';
+import { TrainingOrchestratorService } from './services/training-orchestrator.service';
+import { ValidatorService } from './services/validator.service';
+import { DriftDetectorService } from './services/drift-detector.service';
+import { DeploymentService } from './services/deployment.service';
+
+// Jobs
+import { ScheduledTrainingJob } from './jobs/scheduled-training.job';
+import { DriftCheckJob } from './jobs/drift-check.job';
 
 dotenv.config();
 
-logger.info('Learning Pipeline service starting...');
+// Global service instances
+let dataCollector: DataCollectorService;
+let featureStore: FeatureStoreService;
+let trainingOrchestrator: TrainingOrchestratorService;
+let validator: ValidatorService;
+let driftDetector: DriftDetectorService;
+let deployment: DeploymentService;
+let scheduledTrainingJob: ScheduledTrainingJob;
+let driftCheckJob: DriftCheckJob;
 
-// Configuration
-const TRAINING_SCHEDULE = process.env.TRAINING_SCHEDULE || '0 2 * * *'; // Daily at 2 AM
-const DRIFT_CHECK_SCHEDULE = process.env.DRIFT_CHECK_SCHEDULE || '0 */6 * * *'; // Every 6 hours
+/**
+ * Initialize all services
+ */
+async function initializeServices(): Promise<void> {
+  try {
+    logger.info('Initializing services...');
 
-interface TrainingJob {
-  id: string;
-  type: 'full' | 'incremental' | 'drift_check';
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  started_at?: Date;
-  completed_at?: Date;
-  error?: string;
+    // Connect to databases
+    logger.info('Connecting to databases...');
+    const dataSource = await connectPostgreSQL();
+    await connectAllDatabases();
+    logger.info('Databases connected');
+
+    // Initialize AWS clients
+    logger.info('Initializing AWS clients...');
+    const s3Client = new S3Client({
+      region: config.aws.region,
+    });
+
+    const ecsClient = new ECSClient({
+      region: config.aws.region,
+    });
+    logger.info('AWS clients initialized');
+
+    // Initialize services
+    logger.info('Initializing services...');
+    dataCollector = new DataCollectorService(dataSource, s3Client);
+    featureStore = new FeatureStoreService(s3Client);
+    trainingOrchestrator = new TrainingOrchestratorService(ecsClient, dataSource);
+    validator = new ValidatorService(s3Client, dataSource);
+    driftDetector = new DriftDetectorService(dataSource);
+    deployment = new DeploymentService(s3Client, ecsClient, dataSource);
+
+    // Initialize jobs
+    scheduledTrainingJob = new ScheduledTrainingJob(
+      dataCollector,
+      featureStore,
+      trainingOrchestrator,
+      validator,
+      deployment
+    );
+
+    driftCheckJob = new DriftCheckJob(driftDetector);
+
+    logger.info('All services initialized successfully');
+  } catch (error: any) {
+    logger.error(`Failed to initialize services: ${error.message}`, error);
+    throw error;
+  }
 }
 
-const jobs: Map<string, TrainingJob> = new Map();
-
-async function collectTrainingData() {
-  logger.info('Collecting training data...');
-  // TODO: Implement data collection from:
-  // - User feedback
-  // - Detection results
-  // - False positives/negatives
-  // - New threat samples
+/**
+ * Start scheduled jobs
+ */
+function startScheduledJobs(): void {
+  logger.info('Starting scheduled jobs...');
   
-  return {
-    samples_collected: 0,
-    timestamp: new Date().toISOString()
-  };
+  scheduledTrainingJob.start();
+  driftCheckJob.start();
+  
+  logger.info('Scheduled jobs started');
 }
 
-async function trainModels() {
-  logger.info('Training models...');
-  const jobId = `training-${Date.now()}`;
-  const job: TrainingJob = {
-    id: jobId,
-    type: 'full',
-    status: 'running',
-    started_at: new Date()
-  };
-  
-  jobs.set(jobId, job);
+/**
+ * Graceful shutdown
+ */
+async function shutdown(): Promise<void> {
+  logger.info('Shutting down Learning Pipeline service...');
   
   try {
-    // TODO: Implement model training:
-    // 1. Prepare dataset
-    // 2. Train NLP model
-    // 3. Train URL model
-    // 4. Train Visual model
-    // 5. Validate models
-    // 6. Deploy if validation passes
-    
-    logger.info('Model training completed');
-    job.status = 'completed';
-    job.completed_at = new Date();
+    await disconnectAllDatabases();
+    logger.info('Databases disconnected');
   } catch (error: any) {
-    logger.error(`Training failed: ${error.message}`);
-    job.status = 'failed';
-    job.error = error.message;
-    job.completed_at = new Date();
+    logger.error(`Error during shutdown: ${error.message}`, error);
   }
   
-  return job;
-}
-
-async function checkModelDrift() {
-  logger.info('Checking for model drift...');
-  const jobId = `drift-check-${Date.now()}`;
-  const job: TrainingJob = {
-    id: jobId,
-    type: 'drift_check',
-    status: 'running',
-    started_at: new Date()
-  };
-  
-  jobs.set(jobId, job);
-  
-  try {
-    // TODO: Implement drift detection:
-    // 1. Compare current model performance with baseline
-    // 2. Check for distribution shift in input data
-    // 3. Alert if drift detected
-    
-    logger.info('Drift check completed - no drift detected');
-    job.status = 'completed';
-    job.completed_at = new Date();
-  } catch (error: any) {
-    logger.error(`Drift check failed: ${error.message}`);
-    job.status = 'failed';
-    job.error = error.message;
-    job.completed_at = new Date();
-  }
-  
-  return job;
-}
-
-// Scheduled training job
-cron.schedule(TRAINING_SCHEDULE, async () => {
-  logger.info('Scheduled training job triggered');
-  try {
-    const data = await collectTrainingData();
-    logger.info(`Collected ${data.samples_collected} training samples`);
-    
-    if (data.samples_collected > 100) {
-      await trainModels();
-    } else {
-      logger.info('Insufficient training data, skipping training');
-    }
-  } catch (error: any) {
-    logger.error(`Scheduled training failed: ${error.message}`);
-  }
-});
-
-// Scheduled drift check
-cron.schedule(DRIFT_CHECK_SCHEDULE, async () => {
-  logger.info('Scheduled drift check triggered');
-  try {
-    await checkModelDrift();
-  } catch (error: any) {
-    logger.error(`Scheduled drift check failed: ${error.message}`);
-  }
-});
-
-// Health check endpoint (for monitoring)
-process.on('SIGTERM', () => {
-  logger.info('Learning Pipeline service shutting down...');
   process.exit(0);
-});
+}
 
-logger.info('Learning Pipeline service started');
-logger.info(`Training schedule: ${TRAINING_SCHEDULE}`);
-logger.info(`Drift check schedule: ${DRIFT_CHECK_SCHEDULE}`);
+/**
+ * Main entry point
+ */
+async function main(): Promise<void> {
+  try {
+    logger.info('Learning Pipeline service starting...');
+    logger.info(`Environment: ${config.environment}`);
+    logger.info(`AWS Region: ${config.aws.region}`);
+    logger.info(`S3 Training Bucket: ${config.aws.s3.training}`);
+    logger.info(`S3 Models Bucket: ${config.aws.s3.models}`);
+
+    // Initialize services
+    await initializeServices();
+
+    // Start scheduled jobs
+    startScheduledJobs();
+
+    // Handle shutdown signals
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+
+    logger.info('Learning Pipeline service started successfully');
+    logger.info(`Training schedule: ${process.env.TRAINING_SCHEDULE || '0 2 * * 0'}`);
+    logger.info(`Data collection schedule: ${process.env.DATA_COLLECTION_SCHEDULE || '0 1 * * *'}`);
+    logger.info(`Drift check schedule: ${process.env.DRIFT_CHECK_SCHEDULE || '0 */6 * * *'}`);
+
+    // Keep process alive
+    setInterval(() => {
+      // Health check - log status periodically
+      logger.debug('Learning Pipeline service is running');
+    }, 60000); // Every minute
+
+  } catch (error: any) {
+    logger.error(`Failed to start Learning Pipeline service: ${error.message}`, error);
+    process.exit(1);
+  }
+}
+
+// Start the service
+main().catch((error) => {
+  logger.error(`Unhandled error: ${error.message}`, error);
+  process.exit(1);
+});

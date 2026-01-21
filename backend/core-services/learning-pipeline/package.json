@@ -19,7 +19,10 @@
     "axios": "^1.6.2",
     "redis": "^4.6.11",
     "pg": "^8.11.3",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "@aws-sdk/client-s3": "^3.490.0",
+    "@aws-sdk/client-ecs": "^3.490.0",
+    "typeorm": "^0.3.17"
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
