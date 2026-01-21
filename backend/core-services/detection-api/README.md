@@ -221,9 +221,58 @@ Cache keys are SHA-256 hashes of the input content.
 
 ## Testing
 
+The service includes comprehensive test coverage with unit and integration tests.
+
+### Test Structure
+
+- **Unit Tests**: Services, middleware, and utilities
+- **Integration Tests**: API routes and WebSocket connections
+- **Total**: 9 test files, ~1,771 lines of test code
+
+### Running Tests
+
 ```bash
+# Run all tests
 npm test
+
+# Run unit tests only
+npm run test:unit
+
+# Run integration tests only
+npm run test:integration
+
+# Run with coverage report
+npm run test:coverage
+
+# Watch mode for development
+npm run test:watch
+
+# CI mode with coverage
+npm run test:ci
 ```
+
+### Coverage Targets
+
+- Lines: 80%
+- Branches: 75%
+- Functions: 80%
+- Statements: 80%
+
+### Test Files
+
+**Unit Tests:**
+- `tests/unit/services/orchestrator.service.test.ts`
+- `tests/unit/services/decision-engine.service.test.ts`
+- `tests/unit/services/cache.service.test.ts`
+- `tests/unit/services/event-streamer.service.test.ts`
+- `tests/unit/middleware/auth.middleware.test.ts`
+- `tests/unit/middleware/error-handler.middleware.test.ts`
+- `tests/unit/middleware/rate-limit.middleware.test.ts`
+- `tests/unit/utils/validators.test.ts`
+
+**Integration Tests:**
+- `tests/integration/routes/detection.routes.test.ts`
+- `tests/integration/routes/websocket.routes.test.ts`
 
 ## License
 

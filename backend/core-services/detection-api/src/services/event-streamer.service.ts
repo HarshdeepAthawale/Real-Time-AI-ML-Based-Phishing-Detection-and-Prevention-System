@@ -34,17 +34,61 @@ export class EventStreamerService {
   }
   
   broadcastThreat(organizationId: string, threat: Threat): void {
-    this.io.to(`org:${organizationId}`).emit('threat_detected', {
-      ...threat,
-      timestamp: new Date().toISOString()
-    });
+    if (!organizationId) {
+      logger.debug('Skipping threat broadcast: no organization ID');
+      return;
+    }
+    
+    try {
+      const room = `org:${organizationId}`;
+      const eventData = {
+        ...threat,
+        timestamp: new Date().toISOString()
+      };
+      
+      this.io.to(room).emit('threat_detected', eventData);
+      
+      const roomSize = this.io.sockets.adapter.rooms.get(room)?.size || 0;
+      logger.debug(`Broadcasted threat to org ${organizationId} (${roomSize} clients)`);
+    } catch (error: any) {
+      logger.error('Failed to broadcast threat event:', error.message);
+    }
   }
   
   broadcastEvent(eventType: string, data: any): void {
-    this.io.emit(eventType, {
-      ...data,
-      timestamp: new Date().toISOString()
-    });
+    try {
+      const eventData = {
+        ...data,
+        timestamp: new Date().toISOString()
+      };
+      
+      this.io.emit(eventType, eventData);
+      logger.debug(`Broadcasted event: ${eventType} to all clients`);
+    } catch (error: any) {
+      logger.error(`Failed to broadcast event ${eventType}:`, error.message);
+    }
+  }
+  
+  broadcastToOrganization(organizationId: string, eventType: string, data: any): void {
+    if (!organizationId) {
+      logger.debug(`Skipping ${eventType} broadcast: no organization ID`);
+      return;
+    }
+    
+    try {
+      const room = `org:${organizationId}`;
+      const eventData = {
+        ...data,
+        timestamp: new Date().toISOString()
+      };
+      
+      this.io.to(room).emit(eventType, eventData);
+      
+      const roomSize = this.io.sockets.adapter.rooms.get(room)?.size || 0;
+      logger.debug(`Broadcasted ${eventType} to org ${organizationId} (${roomSize} clients)`);
+    } catch (error: any) {
+      logger.error(`Failed to broadcast ${eventType} to org ${organizationId}:`, error.message);
+    }
   }
   
   getConnectedClientsCount(): number {

@@ -54,21 +54,62 @@ except Exception as e:
 
 # Initialize GNN model (lazy loading)
 gnn_model = None
-model_path = os.getenv("GNN_MODEL_PATH", "./models/gnn-domain-classifier-v1/model.pt")
+gnn_model_loaded = False
 
 def get_gnn_model():
-    """Lazy load GNN model"""
-    global gnn_model
-    if gnn_model is None:
-        try:
-            gnn_model = DomainGNNClassifier()
-            if os.path.exists(model_path):
-                gnn_model.load(model_path)
-                logger.info("GNN model loaded successfully")
-            else:
-                logger.warning(f"GNN model not found at {model_path}. Using untrained model.")
-        except Exception as e:
-            logger.error(f"Failed to load GNN model: {e}")
+    """Lazy load GNN model with improved error handling"""
+    global gnn_model, gnn_model_loaded
+    
+    if gnn_model_loaded:
+        return gnn_model
+    
+    try:
+        # Determine device
+        device = os.getenv("DEVICE", "cpu")
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Get model path from environment or use default
+        model_path = os.getenv("GNN_MODEL_PATH", "./models/gnn-domain-classifier-v1/model.pt")
+        model_dir = os.path.dirname(model_path)
+        
+        logger.info(f"Loading GNN model from {model_path} on device: {device}")
+        
+            # Initialize model
+        gnn_model = DomainGNNClassifier(input_dim=5, hidden_dim=64, num_classes=2)
+        
+        # Move to device
+        if device != "cpu":
+            try:
+                gnn_model = gnn_model.to(device)
+            except Exception as e:
+                logger.warning(f"Failed to move model to {device}, using CPU: {e}")
+                device = "cpu"
+        
+        # Try to load trained weights
+        if os.path.exists(model_path):
+            try:
+                gnn_model.load(model_path, device=device)
+                logger.info(f"✅ GNN model loaded successfully from {model_path}")
+                gnn_model_loaded = True
+            except Exception as e:
+                logger.warning(f"Failed to load model weights from {model_path}: {e}")
+                logger.info("Using untrained model (random weights)")
+                gnn_model_loaded = True  # Still mark as loaded, but with untrained weights
+        else:
+            logger.info(f"⚠️  GNN model not found at {model_path}")
+            logger.info("Using untrained model (random weights)")
+            logger.info("To train a model, run: python training/train_gnn_model.py")
+            gnn_model_loaded = True  # Mark as loaded even without trained weights
+        
+        # Set to evaluation mode
+        gnn_model.eval()
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize GNN model: {e}", exc_info=True)
+        gnn_model = None
+        gnn_model_loaded = False
+    
     return gnn_model
 
 async def perform_url_analysis(url: str, legitimate_domain: str = None):
@@ -130,6 +171,33 @@ async def perform_url_analysis(url: str, legitimate_domain: str = None):
     }
     reputation_score = reputation_scorer.calculate_reputation(analysis_results)
     
+    # Try GNN-based prediction if model is available
+    gnn_prediction = None
+    try:
+        model = get_gnn_model()
+        if model is not None:
+            # Build a simple graph for this domain
+            # In production, this would include relationships from database
+            domains = [{
+                "id": parsed_url["registered_domain"],
+                "domain": parsed_url["registered_domain"],
+                "reputation_score": reputation_score.get("score", 50.0),
+                "age_days": whois_analysis.get("age_days", 0),
+                "is_malicious": False,
+                "is_suspicious": domain_analysis.get("is_suspicious", False) or 
+                                whois_analysis.get("is_suspicious", False)
+            }]
+            
+            # Build graph (may be empty if no relationships)
+            graph_data = graph_builder.build_domain_graph(domains, [])
+            
+            # Make prediction
+            if graph_data.x.size(0) > 0:  # Only if graph has nodes
+                gnn_prediction = model.predict(graph_data)
+                logger.debug(f"GNN prediction: {gnn_prediction}")
+    except Exception as e:
+        logger.debug(f"GNN prediction skipped: {e}")
+    
     result = {
         "url_analysis": parsed_url,
         "domain_analysis": domain_analysis,
@@ -138,8 +206,25 @@ async def perform_url_analysis(url: str, legitimate_domain: str = None):
         "ssl_analysis": ssl_analysis,
         "redirect_analysis": redirect_analysis,
         "homoglyph_analysis": homoglyph_analysis,
-        "reputation_score": reputation_score
+        "reputation_score": reputation_score,
+        "gnn_prediction": gnn_prediction  # Add GNN prediction to result
     }
+    
+    # Enhance phishing probability with GNN if available
+    if gnn_prediction and "malicious_probability" in gnn_prediction:
+        # Combine reputation score with GNN prediction
+        gnn_malicious_prob = gnn_prediction["malicious_probability"]
+        # Use GNN prediction to adjust reputation if confidence is high
+        if gnn_prediction.get("confidence", 0) > 0.6:
+            # Weighted combination: 70% GNN, 30% rule-based reputation
+            combined_score = (gnn_malicious_prob * 0.7) + ((100 - reputation_score.get("score", 50)) / 100 * 0.3)
+            result["phishing_probability"] = combined_score
+        else:
+            # Use reputation-based score if GNN confidence is low
+            result["phishing_probability"] = (100 - reputation_score.get("score", 50)) / 100
+    else:
+        # Fallback to reputation-based score
+        result["phishing_probability"] = (100 - reputation_score.get("score", 50)) / 100
     
     # Cache result (1 hour TTL)
     if cache:

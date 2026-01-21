@@ -4,43 +4,94 @@ import { logger } from '../utils/logger';
 import crypto from 'crypto';
 
 export class CacheService {
-  private client: Redis;
+  private client: Redis | null = null;
+  private connectionAttempted = false;
   
   constructor() {
-    this.client = new Redis({
-      host: config.redis.host,
-      port: config.redis.port,
-      password: config.redis.password,
-      retryStrategy: (times) => {
-        const delay = Math.min(times * 50, 2000);
-        return delay;
-      }
-    });
+    try {
+      this.client = new Redis({
+        host: config.redis.host,
+        port: config.redis.port,
+        password: config.redis.password,
+        retryStrategy: (times) => {
+          const delay = Math.min(times * 50, 2000);
+          return delay;
+        },
+        enableOfflineQueue: false, // Don't queue commands when offline
+        maxRetriesPerRequest: 1,
+        lazyConnect: true, // Don't connect immediately
+        connectTimeout: 5000,
+        enableReadyCheck: true
+      });
+      
+      this.client.on('error', (err) => {
+        logger.debug('Redis connection error (cache operations will be skipped):', err.message);
+      });
+      
+      this.client.on('connect', () => {
+        logger.info('Redis cache connected successfully');
+      });
+      
+      this.client.on('ready', () => {
+        logger.info('Redis cache ready');
+      });
+      
+      this.client.on('close', () => {
+        logger.debug('Redis connection closed');
+      });
+      
+      // Attempt to connect asynchronously (non-blocking)
+      this.attemptConnection();
+    } catch (error: any) {
+      logger.warn('Failed to initialize Redis client (cache disabled):', error.message);
+      this.client = null;
+    }
+  }
+  
+  private async attemptConnection(): Promise<void> {
+    if (this.connectionAttempted || !this.client) {
+      return;
+    }
     
-    this.client.on('error', (err) => {
-      logger.error('Redis error', err);
-    });
-    
-    this.client.on('connect', () => {
-      logger.info('Redis connected');
-    });
+    this.connectionAttempted = true;
+    try {
+      await this.client.connect();
+      logger.info('Redis cache connection established');
+    } catch (err: any) {
+      logger.warn(`Redis cache unavailable (service will continue without cache): ${err.message}`);
+      // Service continues without cache - this is acceptable
+    }
   }
   
   async get(key: string): Promise<any | null> {
+    if (!this.client || !this.client.status || this.client.status !== 'ready') {
+      return null; // Cache unavailable, return null gracefully
+    }
+    
     try {
       const value = await this.client.get(key);
       return value ? JSON.parse(value) : null;
-    } catch (error) {
-      logger.error('Cache get error', error);
+    } catch (error: any) {
+      // Log only if it's not a connection error (those are expected)
+      if (error.message && !error.message.includes('Connection')) {
+        logger.debug('Cache get error (non-critical):', error.message);
+      }
       return null;
     }
   }
   
   async set(key: string, value: any, ttlSeconds: number = 3600): Promise<void> {
+    if (!this.client || !this.client.status || this.client.status !== 'ready') {
+      return; // Cache unavailable, skip silently
+    }
+    
     try {
       await this.client.setex(key, ttlSeconds, JSON.stringify(value));
-    } catch (error) {
-      logger.error('Cache set error', error);
+    } catch (error: any) {
+      // Log only if it's not a connection error
+      if (error.message && !error.message.includes('Connection')) {
+        logger.debug('Cache set error (non-critical):', error.message);
+      }
     }
   }
   
@@ -65,15 +116,29 @@ export class CacheService {
   }
   
   async isConnected(): Promise<boolean> {
+    if (!this.client) {
+      return false;
+    }
+    
     try {
-      await this.client.ping();
-      return true;
+      if (this.client.status === 'ready') {
+        await this.client.ping();
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
   }
   
   async disconnect(): Promise<void> {
-    await this.client.quit();
+    if (this.client) {
+      try {
+        await this.client.quit();
+        logger.info('Redis cache disconnected');
+      } catch (error: any) {
+        logger.debug('Error disconnecting Redis:', error.message);
+      }
+    }
   }
 }

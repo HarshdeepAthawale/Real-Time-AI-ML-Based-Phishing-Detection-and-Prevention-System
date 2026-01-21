@@ -155,12 +155,24 @@ services:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/phishing_detection
       - REDIS_URL=redis://redis:6379
+      - MISP_URL=${MISP_URL:-}
+      - MISP_API_KEY=${MISP_API_KEY:-}
+      - OTX_API_KEY=${OTX_API_KEY:-}
       - LOG_LEVEL=info
+      - PORT=3002
+      - SYNC_INTERVAL_MINUTES=60
+      - BLOOM_FILTER_SIZE=1000000
+      - BLOOM_FILTER_FALSE_POSITIVE_RATE=0.01
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   learning-pipeline:
     build: ./core-services/learning-pipeline

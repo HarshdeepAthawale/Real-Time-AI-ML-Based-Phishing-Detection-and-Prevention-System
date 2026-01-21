@@ -50,12 +50,18 @@ router.post('/email',
       // Cache result
       await cacheService.set(cacheKey, threat, 3600);
       
-      // Broadcast event
-      if (eventStreamer && (validated.organizationId || req.organizationId)) {
-        eventStreamer.broadcastThreat(
-          validated.organizationId || req.organizationId || '',
-          threat
-        );
+      // Broadcast event if threat detected
+      if (eventStreamer && threat.isThreat) {
+        const orgId = validated.organizationId || req.organizationId;
+        if (orgId) {
+          eventStreamer.broadcastThreat(orgId, threat);
+        } else {
+          // Broadcast to all if no org ID
+          eventStreamer.broadcastEvent('threat_detected', {
+            type: 'email',
+            threat
+          });
+        }
       }
       
       res.json(threat);
@@ -105,8 +111,21 @@ router.post('/url',
       // Cache result (URLs cached longer)
       await cacheService.set(cacheKey, threat, 7200);
       
-      // Broadcast event
-      if (eventStreamer) {
+      // Broadcast event if threat detected
+      if (eventStreamer && threat.isThreat) {
+        const orgId = validated.organizationId || req.organizationId;
+        if (orgId) {
+          eventStreamer.broadcastThreat(orgId, threat);
+        } else {
+          // Broadcast to all if no org ID
+          eventStreamer.broadcastEvent('threat_detected', {
+            type: 'url',
+            url: validated.url,
+            threat
+          });
+        }
+      } else if (eventStreamer) {
+        // Broadcast analysis completion even if not a threat
         eventStreamer.broadcastEvent('url_analyzed', {
           url: validated.url,
           threat
@@ -158,6 +177,20 @@ router.post('/text',
       
       // Cache result
       await cacheService.set(cacheKey, threat, 3600);
+      
+      // Broadcast event if threat detected
+      if (eventStreamer && threat.isThreat) {
+        const orgId = validated.organizationId || req.organizationId;
+        if (orgId) {
+          eventStreamer.broadcastThreat(orgId, threat);
+        } else {
+          // Broadcast to all if no org ID (for general alerts)
+          eventStreamer.broadcastEvent('threat_detected', {
+            type: 'text',
+            threat
+          });
+        }
+      }
       
       res.json(threat);
     } catch (error) {

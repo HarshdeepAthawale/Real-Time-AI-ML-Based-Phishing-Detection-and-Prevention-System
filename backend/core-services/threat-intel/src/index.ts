@@ -1,170 +1,231 @@
+import 'reflect-metadata';
 import express from 'express';
-import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
+import cors from 'cors';
+import compression from 'compression';
+import { config } from './config';
 import { logger } from './utils/logger';
-
-dotenv.config();
+import { errorHandler } from './middleware/error-handler.middleware';
+import { connectDatabase, disconnectDatabase, getDatabase } from './services/database.service';
+import { connectRedis, disconnectRedis, isRedisConnected, getRedis } from './services/redis.service';
+import { IOCManagerService } from './services/ioc-manager.service';
+import { IOCMatcherService } from './services/ioc-matcher.service';
+import { FeedManagerService } from './services/feed-manager.service';
+import { SyncService } from './services/sync.service';
+import { EnrichmentService } from './services/enrichment.service';
+import { SyncScheduler } from './jobs/sync-scheduler';
+import iocRoutes from './routes/ioc.routes';
+import feedsRoutes from './routes/feeds.routes';
+import syncRoutes from './routes/sync.routes';
 
 const app = express();
-const PORT = process.env.PORT || 3002;
 
-// External threat intelligence feeds (placeholder URLs)
-const THREAT_FEEDS = {
-  // MISP feed would go here
-  // OTX feed would go here
-};
-
+// Middleware
 app.use(helmet());
-app.use(cors());
-app.use(express.json());
+app.use(cors(config.cors));
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-interface ThreatCheckRequest {
-  url?: string;
-  domain?: string;
-  ip?: string;
-  hash?: string;
-}
+// Initialize services (will be set after database connection)
+let iocManager: IOCManagerService;
+let iocMatcher: IOCMatcherService;
+let feedManager: FeedManagerService;
+let syncService: SyncService;
+let enrichmentService: EnrichmentService;
+let syncScheduler: SyncScheduler;
 
-interface ThreatInfo {
-  is_malicious: boolean;
-  threat_type?: string;
-  confidence: number;
-  sources: string[];
-  last_seen?: string;
-  description?: string;
-}
+// Initialize application
+let dataSource: ReturnType<typeof getDatabase> | null = null;
 
-// In-memory threat database (would be replaced with actual database)
-const threatDatabase: Map<string, ThreatInfo> = new Map();
-
-// Initialize with some example threats
-threatDatabase.set('example-malicious.com', {
-  is_malicious: true,
-  threat_type: 'phishing',
-  confidence: 0.9,
-  sources: ['internal'],
-  last_seen: new Date().toISOString(),
-  description: 'Known phishing domain'
-});
-
-async function checkThreatFeeds(identifier: string, type: 'url' | 'domain' | 'ip' | 'hash'): Promise<ThreatInfo | null> {
-  // TODO: Implement actual threat feed integration
-  // This would query MISP, OTX, VirusTotal, etc.
-  
-  // Check internal database
-  const cached = threatDatabase.get(identifier);
-  if (cached) {
-    return cached;
-  }
-  
-  // Simulate external feed check
-  logger.info(`Checking threat feeds for ${type}: ${identifier}`);
-  
-  // Return null if not found (would query actual feeds)
-  return null;
-}
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', service: 'threat-intel' });
-});
-
-app.get('/api/v1/intelligence/feeds', async (req, res) => {
+async function initializeApp(): Promise<void> {
   try {
-    res.json({
-      feeds: Object.keys(THREAT_FEEDS),
-      status: 'active',
-      last_updated: new Date().toISOString()
+    // Step 1: Connect to database
+    logger.info('Connecting to database...');
+    dataSource = await connectDatabase();
+    
+    // Step 2: Connect to Redis
+    logger.info('Connecting to Redis...');
+    const redis = await connectRedis();
+    
+    // Step 3: Initialize core services (order matters)
+    logger.info('Initializing services...');
+    iocManager = new IOCManagerService(dataSource!);
+    iocMatcher = new IOCMatcherService(redis, iocManager);
+    feedManager = new FeedManagerService(dataSource!);
+    enrichmentService = new EnrichmentService(iocManager);
+    syncService = new SyncService(iocManager, iocMatcher, feedManager);
+    syncScheduler = new SyncScheduler(syncService, feedManager);
+    
+    // Step 4: Initialize bloom filters (requires IOC matcher)
+    logger.info('Initializing bloom filters...');
+    try {
+      await iocMatcher.initializeBloomFilters();
+      logger.info('Bloom filters initialized');
+    } catch (error) {
+      logger.error('Failed to initialize bloom filters (non-critical)', error);
+      // Continue - bloom filters can be rebuilt later
+    }
+    
+    // Step 5: Initialize feed clients (requires feed manager)
+    logger.info('Initializing feed clients...');
+    try {
+      await syncService.initializeFeedClients();
+      logger.info('Feed clients initialized');
+    } catch (error) {
+      logger.error('Failed to initialize some feed clients (non-critical)', error);
+      // Continue - feeds can be configured later
+    }
+    
+    // Step 6: Start sync scheduler (requires sync service)
+    logger.info('Starting sync scheduler...');
+    try {
+      await syncScheduler.start();
+      logger.info('Sync scheduler started');
+    } catch (error) {
+      logger.error('Failed to start sync scheduler (non-critical)', error);
+      // Continue - scheduler can be started manually later
+    }
+    
+    // Step 7: Set services in app for routes
+    app.set('iocManager', iocManager);
+    app.set('iocMatcher', iocMatcher);
+    app.set('feedManager', feedManager);
+    app.set('syncService', syncService);
+    app.set('enrichmentService', enrichmentService);
+    
+    logger.info('Application initialized successfully');
+  } catch (error) {
+    logger.error('Failed to initialize application', error);
+    // Attempt graceful cleanup before exiting
+    try {
+      await shutdown();
+    } catch (cleanupError) {
+      logger.error('Error during cleanup', cleanupError);
+    }
+    process.exit(1);
+  }
+}
+
+// Routes
+app.use('/api/v1/ioc', iocRoutes);
+app.use('/api/v1/feeds', feedsRoutes);
+app.use('/api/v1/sync', syncRoutes);
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    let dbConnected = false;
+    try {
+      const db = getDatabase();
+      dbConnected = db.isInitialized;
+    } catch {
+      dbConnected = false;
+    }
+    const redisConnected = isRedisConnected();
+    
+    const health = {
+      status: dbConnected && redisConnected ? 'healthy' : 'degraded',
+      service: 'threat-intel',
+      database: dbConnected ? 'connected' : 'disconnected',
+      redis: redisConnected ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString(),
+    };
+    
+    const isHealthy = dbConnected && redisConnected;
+    res.status(isHealthy ? 200 : 503).json(health);
+  } catch (error) {
+    logger.error('Health check error', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      service: 'threat-intel',
+      error: (error as Error).message,
+      timestamp: new Date().toISOString(),
     });
-  } catch (error: any) {
-    logger.error(`Error fetching feeds: ${error.message}`);
-    res.status(500).json({ error: 'Failed to fetch feeds' });
   }
 });
 
-app.post('/api/v1/intelligence/check', async (req, res) => {
-  try {
-    const request: ThreatCheckRequest = req.body;
-    const results: any = {};
-    
-    if (request.url) {
-      const parsed = new URL(request.url);
-      const domainResult = await checkThreatFeeds(parsed.hostname, 'domain');
-      if (domainResult) {
-        results.domain = domainResult;
-      }
-    }
-    
-    if (request.domain) {
-      const domainResult = await checkThreatFeeds(request.domain, 'domain');
-      if (domainResult) {
-        results.domain = domainResult;
-      }
-    }
-    
-    if (request.ip) {
-      const ipResult = await checkThreatFeeds(request.ip, 'ip');
-      if (ipResult) {
-        results.ip = ipResult;
-      }
-    }
-    
-    if (request.hash) {
-      const hashResult = await checkThreatFeeds(request.hash, 'hash');
-      if (hashResult) {
-        results.hash = hashResult;
-      }
-    }
-    
-    // If no threats found, return safe result
-    if (Object.keys(results).length === 0) {
-      res.json({
-        is_malicious: false,
-        confidence: 0.1,
-        sources: [],
-        results: {}
-      });
-    } else {
-      // Aggregate results
-      const threats = Object.values(results) as ThreatInfo[];
-      const isMalicious = threats.some(t => t.is_malicious);
-      const maxConfidence = Math.max(...threats.map(t => t.confidence));
-      
-      res.json({
-        is_malicious: isMalicious,
-        confidence: maxConfidence,
-        sources: threats.flatMap(t => t.sources),
-        results
-      });
-    }
-  } catch (error: any) {
-    logger.error(`Threat check error: ${error.message}`);
-    res.status(500).json({ error: 'Threat check failed', message: error.message });
-  }
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    service: 'Threat Intelligence Service',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      ioc: '/api/v1/ioc',
+      feeds: '/api/v1/feeds',
+      sync: '/api/v1/sync',
+    },
+  });
 });
 
-app.post('/api/v1/intelligence/report', async (req, res) => {
+// Error handling
+app.use(errorHandler);
+
+// Graceful shutdown
+async function shutdown(): Promise<void> {
+  logger.info('Shutting down gracefully...');
+  
+  const shutdownTimeout = setTimeout(() => {
+    logger.error('Shutdown timeout - forcing exit');
+    process.exit(1);
+  }, 30000); // 30 second timeout
+  
   try {
-    const { identifier, threat_type, confidence, description } = req.body;
+    // Step 1: Stop accepting new requests (Express handles this automatically)
+    logger.info('Stopping sync scheduler...');
+    if (syncScheduler) {
+      try {
+        syncScheduler.stop();
+        logger.info('Sync scheduler stopped');
+      } catch (error) {
+        logger.error('Error stopping sync scheduler', error);
+      }
+    }
     
-    // Add to internal database
-    threatDatabase.set(identifier, {
-      is_malicious: true,
-      threat_type: threat_type || 'unknown',
-      confidence: confidence || 0.8,
-      sources: ['user-report'],
-      last_seen: new Date().toISOString(),
-      description
+    // Step 2: Disconnect Redis (allows pending operations to complete)
+    logger.info('Disconnecting Redis...');
+    try {
+      await disconnectRedis();
+      logger.info('Redis disconnected');
+    } catch (error) {
+      logger.error('Error disconnecting Redis', error);
+    }
+    
+    // Step 3: Disconnect database (allows pending queries to complete)
+    logger.info('Disconnecting database...');
+    try {
+      await disconnectDatabase();
+      logger.info('Database disconnected');
+    } catch (error) {
+      logger.error('Error disconnecting database', error);
+    }
+    
+    clearTimeout(shutdownTimeout);
+    logger.info('Shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    clearTimeout(shutdownTimeout);
+    logger.error('Error during shutdown', error);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+// Start server
+const PORT = config.port;
+
+// Initialize and start
+initializeApp()
+  .then(() => {
+    app.listen(PORT, () => {
+      logger.info(`Threat Intelligence service running on port ${PORT}`);
+      logger.info(`Environment: ${config.nodeEnv}`);
     });
-    
-    logger.info(`Threat reported: ${identifier}`);
-    res.json({ success: true, message: 'Threat reported successfully' });
-  } catch (error: any) {
-    logger.error(`Report error: ${error.message}`);
-    res.status(500).json({ error: 'Report failed', message: error.message });
-  }
-});
-
-app.listen(PORT, () => {
-  logger.info(`Threat Intelligence service running on port ${PORT}`);
-});
+  })
+  .catch((error) => {
+    logger.error('Failed to start server', error);
+    process.exit(1);
+  });
