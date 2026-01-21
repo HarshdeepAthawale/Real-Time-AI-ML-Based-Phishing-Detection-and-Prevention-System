@@ -1,130 +1,192 @@
+import 'reflect-metadata';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
+import compression from 'compression';
+import { config } from './config';
 import { logger } from './utils/logger';
-
-dotenv.config();
+import { connectDatabase, disconnectDatabase, getDatabase } from './services/database.service';
+import { connectRedis, disconnectRedis, isRedisConnected, getRedis } from './services/redis.service';
+import { CuckooClient } from './integrations/cuckoo.client';
+import { AnyRunClient } from './integrations/anyrun.client';
+import { BaseSandboxClient } from './integrations/base-sandbox.client';
+import { FileAnalyzerService } from './services/file-analyzer.service';
+import { SandboxSubmitterService } from './services/sandbox-submitter.service';
+import { ResultProcessorService } from './services/result-processor.service';
+import { BehavioralAnalyzerService } from './services/behavioral-analyzer.service';
+import { CorrelationService } from './services/correlation.service';
+import { SandboxQueueJob } from './jobs/sandbox-queue.job';
+import { setupSandboxRoutes } from './routes/sandbox.routes';
 
 const app = express();
 const PORT = process.env.PORT || 3004;
 
+// Middleware
 app.use(helmet());
-app.use(cors());
-app.use(express.json());
+app.use(cors(config.cors));
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-interface SandboxAnalysisRequest {
-  url?: string;
-  file_hash?: string;
-  file_content?: string; // base64 encoded
-  analysis_type: 'url' | 'file' | 'email';
-}
+// Initialize services (will be set after database connection)
+let sandboxClient: BaseSandboxClient;
+let fileAnalyzer: FileAnalyzerService;
+let submitterService: SandboxSubmitterService;
+let resultProcessorService: ResultProcessorService;
+let behavioralAnalyzer: BehavioralAnalyzerService;
+let correlationService: CorrelationService;
+let queueJob: SandboxQueueJob;
 
-interface SandboxAnalysisResponse {
-  analysis_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  results?: {
-    is_malicious: boolean;
-    threat_type?: string;
-    confidence: number;
-    behaviors?: string[];
-    indicators?: any;
-  };
-  created_at: string;
-  completed_at?: string;
-}
-
-const analyses: Map<string, SandboxAnalysisResponse> = new Map();
-
-async function analyzeInSandbox(_request: SandboxAnalysisRequest): Promise<SandboxAnalysisResponse> {
-  const analysisId = `sandbox-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
-  const analysis: SandboxAnalysisResponse = {
-    analysis_id: analysisId,
-    status: 'pending',
-    created_at: new Date().toISOString()
-  };
-  
-  analyses.set(analysisId, analysis);
-  
-  // Simulate sandbox analysis (would integrate with actual sandbox like Cuckoo, Joe Sandbox, etc.)
-  setTimeout(() => {
-    analysis.status = 'running';
-    logger.info(`Sandbox analysis started: ${analysisId}`);
-    
-    // Simulate analysis completion
-    setTimeout(() => {
-      analysis.status = 'completed';
-      analysis.completed_at = new Date().toISOString();
-      analysis.results = {
-        is_malicious: Math.random() > 0.7, // 30% chance of malicious
-        threat_type: 'phishing',
-        confidence: 0.75,
-        behaviors: ['network_activity', 'file_download'],
-        indicators: {
-          suspicious_domains: ['example-malicious.com'],
-          file_downloads: 1,
-          network_connections: 3
-        }
-      };
-      logger.info(`Sandbox analysis completed: ${analysisId}`);
-    }, 5000); // Simulate 5 second analysis
-  }, 1000);
-  
-  return analysis;
-}
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', service: 'sandbox-service' });
-});
-
-app.post('/api/v1/sandbox/analyze', async (req, res) => {
+// Initialize application
+async function initializeApp(): Promise<void> {
   try {
-    const request: SandboxAnalysisRequest = req.body;
+    // Step 1: Connect to database
+    logger.info('Connecting to database...');
+    const dataSource = await connectDatabase();
     
-    if (!request.analysis_type) {
-      return res.status(400).json({ error: 'analysis_type is required' });
+    // Step 2: Connect to Redis
+    logger.info('Connecting to Redis...');
+    const redis = await connectRedis();
+    
+    // Step 3: Initialize sandbox client based on configuration
+    logger.info(`Initializing sandbox client: ${config.provider}`);
+    if (config.provider === 'cuckoo') {
+      if (!config.cuckoo.url) {
+        throw new Error('CUCKOO_SANDBOX_URL is required');
+      }
+      sandboxClient = new CuckooClient(config.cuckoo.url, config.cuckoo.apiKey);
+      logger.info('Cuckoo Sandbox client initialized');
+    } else if (config.provider === 'anyrun') {
+      if (!config.anyrun.apiKey) {
+        throw new Error('ANYRUN_API_KEY is required');
+      }
+      sandboxClient = new AnyRunClient(config.anyrun.apiKey);
+      logger.info('Any.run client initialized');
+    } else {
+      throw new Error(`Unknown sandbox provider: ${config.provider}`);
     }
     
-    // Start sandbox analysis
-    const analysis = await analyzeInSandbox(request);
+    // Step 4: Initialize core services
+    logger.info('Initializing services...');
+    fileAnalyzer = new FileAnalyzerService();
+    behavioralAnalyzer = new BehavioralAnalyzerService();
+    submitterService = new SandboxSubmitterService(sandboxClient, fileAnalyzer, dataSource);
+    correlationService = new CorrelationService(
+      dataSource,
+      process.env.DETECTION_API_URL
+    );
+    resultProcessorService = new ResultProcessorService(
+      sandboxClient,
+      dataSource,
+      behavioralAnalyzer,
+      correlationService
+    );
     
-    res.status(202).json(analysis);
+    // Step 5: Initialize job queue
+    logger.info('Initializing job queue...');
+    queueJob = new SandboxQueueJob(redis, resultProcessorService);
+    logger.info('Job queue initialized');
+    
+    // Step 6: Set up routes
+    logger.info('Setting up routes...');
+    const sandboxRoutes = setupSandboxRoutes(
+      submitterService,
+      resultProcessorService,
+      queueJob,
+      dataSource
+    );
+    app.use('/api/v1/sandbox', sandboxRoutes);
+    
+    logger.info('Application initialized successfully');
   } catch (error: any) {
-    logger.error(`Sandbox analysis error: ${error.message}`);
-    res.status(500).json({ error: 'Sandbox analysis failed', message: error.message });
-  }
-});
-
-app.get('/api/v1/sandbox/analysis/:analysisId', (req, res) => {
-  try {
-    const { analysisId } = req.params;
-    const analysis = analyses.get(analysisId);
-    
-    if (!analysis) {
-      return res.status(404).json({ error: 'Analysis not found' });
+    logger.error('Failed to initialize application', error);
+    // Attempt graceful cleanup before exiting
+    try {
+      await shutdown();
+    } catch (cleanupError) {
+      logger.error('Error during cleanup', cleanupError);
     }
-    
-    res.json(analysis);
-  } catch (error: any) {
-    logger.error(`Get analysis error: ${error.message}`);
-    res.status(500).json({ error: 'Failed to get analysis', message: error.message });
+    process.exit(1);
   }
-});
+}
 
-app.get('/api/v1/sandbox/analyses', (req, res) => {
+// Health check endpoint
+app.get('/health', async (req, res) => {
   try {
-    const allAnalyses = Array.from(analyses.values());
-    res.json({
-      analyses: allAnalyses,
-      count: allAnalyses.length
+    const dbConnected = getDatabase().isInitialized;
+    const redisConnected = isRedisConnected();
+    
+    const health = {
+      status: dbConnected && redisConnected ? 'healthy' : 'degraded',
+      service: 'sandbox-service',
+      provider: config.provider,
+      database: dbConnected ? 'connected' : 'disconnected',
+      redis: redisConnected ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString(),
+    };
+    
+    const isHealthy = dbConnected && redisConnected;
+    res.status(isHealthy ? 200 : 503).json(health);
+  } catch (error: any) {
+    logger.error('Health check error', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      service: 'sandbox-service',
+      error: error.message,
+      timestamp: new Date().toISOString(),
     });
-  } catch (error: any) {
-    logger.error(`List analyses error: ${error.message}`);
-    res.status(500).json({ error: 'Failed to list analyses', message: error.message });
   }
 });
 
-app.listen(PORT, () => {
-  logger.info(`Sandbox service running on port ${PORT}`);
+// Graceful shutdown
+async function shutdown(): Promise<void> {
+  logger.info('Shutting down gracefully...');
+  
+  try {
+    if (queueJob) {
+      await queueJob.close();
+    }
+  } catch (error) {
+    logger.error('Error closing queue', error);
+  }
+  
+  try {
+    await disconnectRedis();
+  } catch (error) {
+    logger.error('Error disconnecting Redis', error);
+  }
+  
+  try {
+    await disconnectDatabase();
+  } catch (error) {
+    logger.error('Error disconnecting database', error);
+  }
+  
+  logger.info('Shutdown complete');
+}
+
+// Handle shutdown signals
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received');
+  await shutdown();
+  process.exit(0);
 });
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT received');
+  await shutdown();
+  process.exit(0);
+});
+
+// Start server
+initializeApp()
+  .then(() => {
+    app.listen(PORT, () => {
+      logger.info(`Sandbox service running on port ${PORT}`);
+      logger.info(`Provider: ${config.provider}`);
+    });
+  })
+  .catch((error) => {
+    logger.error('Failed to start server', error);
+    process.exit(1);
+  });

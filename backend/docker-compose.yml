@@ -208,6 +208,29 @@ services:
       - "3004:3004"
     environment:
       - NODE_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/phishing_detection
+      - REDIS_URL=redis://redis:6379
+      - SANDBOX_PROVIDER=${SANDBOX_PROVIDER:-anyrun}
+      - CUCKOO_SANDBOX_URL=${CUCKOO_SANDBOX_URL:-}
+      - CUCKOO_API_KEY=${CUCKOO_API_KEY:-}
+      - ANYRUN_API_KEY=${ANYRUN_API_KEY:-}
+      - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-300}
+      - SANDBOX_POLL_INTERVAL=${SANDBOX_POLL_INTERVAL:-10}
+      - SANDBOX_QUEUE_CONCURRENCY=${SANDBOX_QUEUE_CONCURRENCY:-5}
+      - DETECTION_API_URL=http://detection-api:3001
+      - LOG_LEVEL=info
+      - PORT=3004
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      - NODE_ENV=development
       - REDIS_URL=redis://redis:6379
       - LOG_LEVEL=info
     depends_on:
