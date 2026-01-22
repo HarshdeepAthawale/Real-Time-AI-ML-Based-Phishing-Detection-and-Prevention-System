@@ -1,79 +1,76 @@
+"""SSL certificate analysis"""
 import ssl
 import socket
-from typing import Dict, Optional
+from typing import Dict
 from datetime import datetime
-from cryptography import x509
-from cryptography.hazmat.backends import default_backend
+from src.utils.logger import logger
+
 
 class SSLAnalyzer:
+    """Analyze SSL certificates"""
+    
     def analyze(self, domain: str, port: int = 443) -> Dict:
-        """Analyze SSL certificate for domain"""
+        """
+        Analyze SSL certificate
+        
+        Args:
+            domain: Domain to analyze
+            port: Port number (default 443)
+            
+        Returns:
+            Dictionary with SSL analysis
+        """
         results = {
             "domain": domain,
-            "port": port,
             "has_ssl": False,
-            "certificate_valid": False,
-            "certificate_issuer": None,
-            "certificate_subject": None,
-            "certificate_expiry": None,
-            "days_until_expiry": None,
-            "is_suspicious": False
+            "is_valid": False,
+            "issuer": None,
+            "subject": None,
+            "expiration_date": None,
+            "days_until_expiration": None
         }
         
         try:
-            # Create SSL context
             context = ssl.create_default_context()
             
-            # Connect to domain
             with socket.create_connection((domain, port), timeout=5) as sock:
                 with context.wrap_socket(sock, server_hostname=domain) as ssock:
-                    cert = ssock.getpeercert(binary_form=True)
+                    cert = ssock.getpeercert()
                     
-                    if cert:
-                        results["has_ssl"] = True
+                    results["has_ssl"] = True
+                    results["is_valid"] = True
+                    
+                    # Extract issuer
+                    if cert.get('issuer'):
+                        issuer_dict = dict(x[0] for x in cert['issuer'])
+                        results["issuer"] = issuer_dict.get('organizationName', 'Unknown')
+                    
+                    # Extract subject
+                    if cert.get('subject'):
+                        subject_dict = dict(x[0] for x in cert['subject'])
+                        results["subject"] = subject_dict.get('commonName', domain)
+                    
+                    # Check expiration
+                    if cert.get('notAfter'):
+                        exp_date = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
+                        results["expiration_date"] = exp_date.isoformat()
+                        days_until_exp = (exp_date - datetime.now()).days
+                        results["days_until_expiration"] = days_until_exp
                         
-                        # Parse certificate
-                        cert_obj = x509.load_der_x509_certificate(cert, default_backend())
-                        
-                        # Get issuer
-                        issuer = cert_obj.issuer.rfc4514_string()
-                        results["certificate_issuer"] = issuer
-                        
-                        # Get subject
-                        subject = cert_obj.subject.rfc4514_string()
-                        results["certificate_subject"] = subject
-                        
-                        # Get expiry date
-                        expiry = cert_obj.not_valid_after
-                        results["certificate_expiry"] = expiry.isoformat()
-                        
-                        # Calculate days until expiry
-                        days_until_expiry = (expiry - datetime.now()).days
-                        results["days_until_expiry"] = days_until_expiry
-                        
-                        # Check if certificate is valid
-                        now = datetime.now()
-                        if cert_obj.not_valid_before <= now <= cert_obj.not_valid_after:
-                            results["certificate_valid"] = True
-                        else:
-                            results["is_suspicious"] = True
-                        
-                        # Suspicious if certificate expires soon (< 30 days)
-                        if days_until_expiry < 30:
-                            results["is_suspicious"] = True
-                        
-                        # Check for self-signed certificates
-                        if 'self-signed' in issuer.lower() or issuer == subject:
-                            results["is_suspicious"] = True
-                            
-        except socket.timeout:
-            results["error"] = "Connection timeout"
-        except socket.gaierror:
-            results["error"] = "DNS resolution failed"
+                        # Suspicious if certificate is expiring soon
+                        if days_until_exp < 30:
+                            results["expiring_soon"] = True
+        
         except ssl.SSLError as e:
-            results["error"] = f"SSL error: {str(e)}"
-            results["is_suspicious"] = True
+            logger.debug(f"SSL error for {domain}: {e}")
+            results["ssl_error"] = str(e)
+        
+        except socket.timeout:
+            logger.debug(f"SSL connection timeout for {domain}")
+            results["error"] = "Connection timeout"
+        
         except Exception as e:
+            logger.debug(f"SSL analysis failed for {domain}: {e}")
             results["error"] = str(e)
         
         return results

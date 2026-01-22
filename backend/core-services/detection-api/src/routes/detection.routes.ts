@@ -8,6 +8,10 @@ import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.middlew
 import { rateLimitMiddleware } from '../middleware/rate-limit.middleware';
 import { detectEmailSchema, detectURLSchema, detectTextSchema } from '../utils/validators';
 import { logger } from '../utils/logger';
+import { getPostgreSQL } from '../../../../shared/database/connection';
+import { Threat as ThreatEntity } from '../../../../shared/database/models/Threat';
+import { Detection as DetectionEntity } from '../../../../shared/database/models/Detection';
+import { Threat as ThreatModel } from '../models/detection.model';
 
 const router = Router();
 const orchestrator = new OrchestratorService();
@@ -17,6 +21,84 @@ let eventStreamer: EventStreamerService;
 
 export function setEventStreamer(streamer: EventStreamerService): void {
   eventStreamer = streamer;
+}
+
+/**
+ * Save threat to database
+ */
+async function saveThreatToDatabase(
+  threat: ThreatModel,
+  organizationId: string | undefined,
+  input: any,
+  mlResponse: any
+): Promise<string | null> {
+  try {
+    if (!organizationId) {
+      logger.debug('Skipping threat save: no organization ID');
+      return null;
+    }
+
+    const dataSource = getPostgreSQL();
+    const threatRepository = dataSource.getRepository(ThreatEntity);
+    const detectionRepository = dataSource.getRepository(DetectionEntity);
+
+    // Only save if it's actually a threat
+    if (!threat.isThreat) {
+      return null;
+    }
+
+    // Create threat entity
+    const threatEntity = threatRepository.create({
+      organization_id: organizationId,
+      threat_type: threat.threatType,
+      severity: threat.severity,
+      status: 'detected',
+      confidence_score: Math.round(threat.confidence * 100) / 100,
+      source: input.url ? 'url' : input.emailContent ? 'email' : 'text',
+      source_value: input.url || input.emailContent?.substring(0, 500) || input.text?.substring(0, 500) || null,
+      title: threat.indicators.length > 0 ? threat.indicators[0] : null,
+      description: threat.indicators.join(', '),
+      metadata: {
+        ...threat.metadata,
+        scores: threat.scores,
+        indicators: threat.indicators,
+      },
+      detected_at: new Date(),
+    });
+
+    const savedThreat = await threatRepository.save(threatEntity);
+
+    // Create detection record
+    const detectionEntity = detectionRepository.create({
+      threat_id: savedThreat.id,
+      organization_id: organizationId,
+      detection_type: 'ensemble',
+      model_version: '1.0.0',
+      input_data: {
+        type: input.url ? 'url' : input.emailContent ? 'email' : 'text',
+        value: input.url || input.emailContent?.substring(0, 1000) || input.text?.substring(0, 1000),
+      },
+      analysis_result: mlResponse,
+      confidence_score: Math.round(threat.confidence * 100) / 100,
+      processing_time_ms: threat.metadata.processingTimeMs,
+      detected_at: new Date(),
+    });
+
+    await detectionRepository.save(detectionEntity);
+
+    logger.info('Threat saved to database', {
+      threatId: savedThreat.id,
+      organizationId,
+      threatType: threat.threatType,
+      severity: threat.severity,
+    });
+
+    return savedThreat.id;
+  } catch (error) {
+    logger.error('Failed to save threat to database', error);
+    // Don't throw - allow detection to continue even if save fails
+    return null;
+  }
 }
 
 router.post('/email', 
@@ -47,12 +129,15 @@ router.post('/email',
       
       const threat = decisionEngine.makeDecision(mlResponse, validated);
       
+      // Save threat to database if detected
+      const orgId = validated.organizationId || req.organizationId;
+      const threatId = await saveThreatToDatabase(threat, orgId, validated, mlResponse);
+      
       // Cache result
       await cacheService.set(cacheKey, threat, 3600);
       
       // Broadcast event if threat detected
       if (eventStreamer && threat.isThreat) {
-        const orgId = validated.organizationId || req.organizationId;
         if (orgId) {
           eventStreamer.broadcastThreat(orgId, threat);
         } else {
@@ -108,12 +193,15 @@ router.post('/url',
       
       const threat = decisionEngine.makeDecision(mlResponse, validated);
       
+      // Save threat to database if detected
+      const orgId = validated.organizationId || req.organizationId;
+      const threatId = await saveThreatToDatabase(threat, orgId, validated, mlResponse);
+      
       // Cache result (URLs cached longer)
       await cacheService.set(cacheKey, threat, 7200);
       
       // Broadcast event if threat detected
       if (eventStreamer && threat.isThreat) {
-        const orgId = validated.organizationId || req.organizationId;
         if (orgId) {
           eventStreamer.broadcastThreat(orgId, threat);
         } else {
@@ -175,12 +263,15 @@ router.post('/text',
       
       const threat = decisionEngine.makeDecision(mlResponse, validated);
       
+      // Save threat to database if detected
+      const orgId = validated.organizationId || req.organizationId;
+      const threatId = await saveThreatToDatabase(threat, orgId, validated, mlResponse);
+      
       // Cache result
       await cacheService.set(cacheKey, threat, 3600);
       
       // Broadcast event if threat detected
       if (eventStreamer && threat.isThreat) {
-        const orgId = validated.organizationId || req.organizationId;
         if (orgId) {
           eventStreamer.broadcastThreat(orgId, threat);
         } else {

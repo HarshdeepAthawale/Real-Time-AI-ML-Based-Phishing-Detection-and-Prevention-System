@@ -1,63 +1,55 @@
-import redis
-from typing import Optional, Any
+"""Redis caching utilities"""
 import json
-import os
-from datetime import timedelta
+import hashlib
+from typing import Optional
+import redis
+from src.config import settings
+from src.utils.logger import logger
 
-class Cache:
+
+class CacheService:
+    """Redis cache service for URL analysis results"""
+    
     def __init__(self):
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        try:
-            self.client = redis.from_url(redis_url, decode_responses=True)
-            self.client.ping()  # Test connection
-            self.enabled = True
-        except:
-            self.client = None
-            self.enabled = False
+        self.redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+        self.ttl = settings.cache_ttl
     
-    def get(self, key: str) -> Optional[Any]:
-        """Get value from cache"""
-        if not self.enabled:
+    def _generate_key(self, prefix: str, data: str) -> str:
+        """Generate cache key from data"""
+        hash_obj = hashlib.sha256(data.encode())
+        return f"{prefix}:{hash_obj.hexdigest()[:16]}"
+    
+    async def get(self, key: str) -> Optional[dict]:
+        """Get cached result"""
+        try:
+            cached = self.redis_client.get(key)
+            if cached:
+                logger.debug(f"Cache hit for key: {key}")
+                return json.loads(cached)
+            logger.debug(f"Cache miss for key: {key}")
             return None
-        
-        try:
-            value = self.client.get(key)
-            if value:
-                return json.loads(value)
-        except:
-            pass
-        return None
+        except Exception as e:
+            logger.error(f"Cache get error: {e}")
+            return None
     
-    def set(self, key: str, value: Any, ttl: int = 3600):
-        """Set value in cache with TTL"""
-        if not self.enabled:
-            return
-        
+    async def set(self, key: str, value: dict, ttl: Optional[int] = None) -> bool:
+        """Set cache value"""
         try:
-            self.client.setex(
-                key,
-                ttl,
-                json.dumps(value, default=str)
-            )
-        except:
-            pass
-    
-    def delete(self, key: str):
-        """Delete key from cache"""
-        if not self.enabled:
-            return
-        
-        try:
-            self.client.delete(key)
-        except:
-            pass
-    
-    def exists(self, key: str) -> bool:
-        """Check if key exists in cache"""
-        if not self.enabled:
+            ttl = ttl or self.ttl
+            self.redis_client.setex(key, ttl, json.dumps(value))
+            logger.debug(f"Cached result for key: {key}")
+            return True
+        except Exception as e:
+            logger.error(f"Cache set error: {e}")
             return False
-        
-        try:
-            return self.client.exists(key) > 0
-        except:
-            return False
+    
+    def get_url_cache_key(self, url: str) -> str:
+        """Generate cache key for URL analysis"""
+        return self._generate_key("url:analysis", url)
+    
+    def get_domain_cache_key(self, domain: str) -> str:
+        """Generate cache key for domain analysis"""
+        return self._generate_key("url:domain", domain)
+
+
+cache_service = CacheService()

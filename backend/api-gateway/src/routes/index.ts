@@ -47,18 +47,5 @@ export const setupRoutes = (): Router => {
     }
   });
 
-  // WebSocket route for real-time events (if needed)
-  // Note: WebSocket support requires additional setup in detection-api service
-  router.use(
-    '/ws/events',
-    detectionHandler,
-    createProxyMiddleware({
-      target: serviceConfigs['detection-api'].url,
-      changeOrigin: true,
-      ws: true,
-      logLevel: 'debug'
-    })
-  );
-
   return router;
 };

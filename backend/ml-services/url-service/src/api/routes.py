@@ -1,383 +1,240 @@
+"""API route handlers"""
+import time
 from fastapi import APIRouter, HTTPException
 from src.api.schemas import (
-    URLAnalysisRequest, 
-    DomainAnalysisRequest,
-    RedirectChainRequest,
-    DomainReputationRequest,
-    URLAnalysisResponse,
-    DomainAnalysisResponse,
-    RedirectChainResponse,
-    DomainReputationResponse,
-    CompatibilityAnalysisRequest,
-    CompatibilityAnalysisResponse
+    URLAnalysisRequest, DomainAnalysisRequest, RedirectCheckRequest, HomoglyphCheckRequest,
+    URLAnalysisResponse, DomainAnalysisResponse, HealthResponse
 )
+from src.models.gnn_classifier import DomainGNNClassifier
+from src.models.reputation_scorer import ReputationScorer
 from src.analyzers.url_parser import URLParser
 from src.analyzers.domain_analyzer import DomainAnalyzer
-from src.analyzers.homoglyph_detector import HomoglyphDetector
 from src.analyzers.dns_analyzer import DNSAnalyzer
 from src.analyzers.whois_analyzer import WHOISAnalyzer
 from src.analyzers.ssl_analyzer import SSLAnalyzer
+from src.analyzers.homoglyph_detector import HomoglyphDetector
 from src.crawler.redirect_tracker import RedirectTracker
 from src.graph.graph_builder import GraphBuilder
-from src.models.gnn_classifier import DomainGNNClassifier
-from src.models.reputation_scorer import ReputationScorer
-from src.utils.cache import Cache
-from src.utils.validators import URLValidator
-import time
-import logging
-import os
-import torch
-
-logger = logging.getLogger(__name__)
+from src.utils.cache import cache_service
+from src.utils.logger import logger
+from src.config import settings
 
 router = APIRouter()
 
-# Initialize analyzers (singleton pattern)
+# Initialize analyzers and models
 url_parser = URLParser()
 domain_analyzer = DomainAnalyzer()
-homoglyph_detector = HomoglyphDetector()
 dns_analyzer = DNSAnalyzer()
 whois_analyzer = WHOISAnalyzer()
 ssl_analyzer = SSLAnalyzer()
+homoglyph_detector = HomoglyphDetector()
 redirect_tracker = RedirectTracker()
 graph_builder = GraphBuilder()
 reputation_scorer = ReputationScorer()
-url_validator = URLValidator()
 
-# Initialize cache
-try:
-    cache = Cache()
-    logger.info("Cache initialized")
-except Exception as e:
-    logger.warning(f"Cache initialization failed: {e}. Caching will be disabled.")
-    cache = None
+# Initialize GNN model
+gnn_classifier = DomainGNNClassifier(
+    model_path=settings.gnn_model_path,
+    device=settings.inference_device
+)
 
-# Initialize GNN model (lazy loading)
-gnn_model = None
-gnn_model_loaded = False
-
-def get_gnn_model():
-    """Lazy load GNN model with improved error handling"""
-    global gnn_model, gnn_model_loaded
-    
-    if gnn_model_loaded:
-        return gnn_model
-    
-    try:
-        # Determine device
-        device = os.getenv("DEVICE", "cpu")
-        if device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        # Get model path from environment or use default
-        model_path = os.getenv("GNN_MODEL_PATH", "./models/gnn-domain-classifier-v1/model.pt")
-        model_dir = os.path.dirname(model_path)
-        
-        logger.info(f"Loading GNN model from {model_path} on device: {device}")
-        
-            # Initialize model
-        gnn_model = DomainGNNClassifier(input_dim=5, hidden_dim=64, num_classes=2)
-        
-        # Move to device
-        if device != "cpu":
-            try:
-                gnn_model = gnn_model.to(device)
-            except Exception as e:
-                logger.warning(f"Failed to move model to {device}, using CPU: {e}")
-                device = "cpu"
-        
-        # Try to load trained weights
-        if os.path.exists(model_path):
-            try:
-                gnn_model.load(model_path, device=device)
-                logger.info(f"✅ GNN model loaded successfully from {model_path}")
-                gnn_model_loaded = True
-            except Exception as e:
-                logger.warning(f"Failed to load model weights from {model_path}: {e}")
-                logger.info("Using untrained model (random weights)")
-                gnn_model_loaded = True  # Still mark as loaded, but with untrained weights
-        else:
-            logger.info(f"⚠️  GNN model not found at {model_path}")
-            logger.info("Using untrained model (random weights)")
-            logger.info("To train a model, run: python training/train_gnn_model.py")
-            gnn_model_loaded = True  # Mark as loaded even without trained weights
-        
-        # Set to evaluation mode
-        gnn_model.eval()
-        
-    except Exception as e:
-        logger.error(f"Failed to initialize GNN model: {e}", exc_info=True)
-        gnn_model = None
-        gnn_model_loaded = False
-    
-    return gnn_model
-
-async def perform_url_analysis(url: str, legitimate_domain: str = None):
-    """Helper function to perform URL analysis - can be reused by multiple endpoints"""
-    # Validate URL
-    if not url_validator.is_valid_url(url):
-        sanitized = url_validator.sanitize_url(url)
-        if not sanitized:
-            raise HTTPException(status_code=400, detail="Invalid URL format")
-        url = sanitized
-    
-    # Check cache
-    cache_key = f"url_analysis:{hash(url)}"
-    if cache and cache.exists(cache_key):
-        cached_result = cache.get(cache_key)
-        if cached_result:
-            logger.info(f"Returning cached result for URL: {url}")
-            return cached_result
-    
-    # Parse URL
-    parsed_url = url_parser.parse(url)
-    
-    # Analyze domain
-    domain_analysis = domain_analyzer.analyze(parsed_url["registered_domain"])
-    
-    # DNS analysis
-    dns_analysis = dns_analyzer.analyze(parsed_url["registered_domain"])
-    
-    # WHOIS analysis
-    whois_analysis = whois_analyzer.analyze(parsed_url["registered_domain"])
-    
-    # SSL analysis (only for HTTPS URLs)
-    ssl_analysis = None
-    if parsed_url["scheme"] == "https":
-        try:
-            ssl_analysis = ssl_analyzer.analyze(parsed_url["registered_domain"])
-        except Exception as e:
-            logger.warning(f"SSL analysis failed: {e}")
-    
-    # Redirect tracking
-    redirect_analysis = redirect_tracker.track(url)
-    
-    # Homoglyph detection (if legitimate domain provided)
-    homoglyph_analysis = None
-    if legitimate_domain:
-        homoglyph_analysis = homoglyph_detector.detect(
-            parsed_url["registered_domain"],
-            legitimate_domain
-        )
-    
-    # Calculate reputation score
-    analysis_results = {
-        "whois_analysis": whois_analysis,
-        "dns_analysis": dns_analysis,
-        "ssl_analysis": ssl_analysis,
-        "redirect_analysis": redirect_analysis,
-        "homoglyph_analysis": homoglyph_analysis,
-        "domain_analysis": domain_analysis
-    }
-    reputation_score = reputation_scorer.calculate_reputation(analysis_results)
-    
-    # Try GNN-based prediction if model is available
-    gnn_prediction = None
-    try:
-        model = get_gnn_model()
-        if model is not None:
-            # Build a simple graph for this domain
-            # In production, this would include relationships from database
-            domains = [{
-                "id": parsed_url["registered_domain"],
-                "domain": parsed_url["registered_domain"],
-                "reputation_score": reputation_score.get("score", 50.0),
-                "age_days": whois_analysis.get("age_days", 0),
-                "is_malicious": False,
-                "is_suspicious": domain_analysis.get("is_suspicious", False) or 
-                                whois_analysis.get("is_suspicious", False)
-            }]
-            
-            # Build graph (may be empty if no relationships)
-            graph_data = graph_builder.build_domain_graph(domains, [])
-            
-            # Make prediction
-            if graph_data.x.size(0) > 0:  # Only if graph has nodes
-                gnn_prediction = model.predict(graph_data)
-                logger.debug(f"GNN prediction: {gnn_prediction}")
-    except Exception as e:
-        logger.debug(f"GNN prediction skipped: {e}")
-    
-    result = {
-        "url_analysis": parsed_url,
-        "domain_analysis": domain_analysis,
-        "dns_analysis": dns_analysis,
-        "whois_analysis": whois_analysis,
-        "ssl_analysis": ssl_analysis,
-        "redirect_analysis": redirect_analysis,
-        "homoglyph_analysis": homoglyph_analysis,
-        "reputation_score": reputation_score,
-        "gnn_prediction": gnn_prediction  # Add GNN prediction to result
-    }
-    
-    # Enhance phishing probability with GNN if available
-    if gnn_prediction and "malicious_probability" in gnn_prediction:
-        # Combine reputation score with GNN prediction
-        gnn_malicious_prob = gnn_prediction["malicious_probability"]
-        # Use GNN prediction to adjust reputation if confidence is high
-        if gnn_prediction.get("confidence", 0) > 0.6:
-            # Weighted combination: 70% GNN, 30% rule-based reputation
-            combined_score = (gnn_malicious_prob * 0.7) + ((100 - reputation_score.get("score", 50)) / 100 * 0.3)
-            result["phishing_probability"] = combined_score
-        else:
-            # Use reputation-based score if GNN confidence is low
-            result["phishing_probability"] = (100 - reputation_score.get("score", 50)) / 100
-    else:
-        # Fallback to reputation-based score
-        result["phishing_probability"] = (100 - reputation_score.get("score", 50)) / 100
-    
-    # Cache result (1 hour TTL)
-    if cache:
-        cache.set(cache_key, result, ttl=3600)
-    
-    return result
 
 @router.post("/analyze-url", response_model=URLAnalysisResponse)
 async def analyze_url(request: URLAnalysisRequest):
-    """Analyze URL for phishing indicators"""
+    """Complete URL analysis"""
     start_time = time.time()
     
+    # Check cache
+    cache_key = cache_service.get_url_cache_key(request.url)
+    cached_result = await cache_service.get(cache_key)
+    if cached_result:
+        cached_result["cached"] = True
+        return cached_result
+    
     try:
-        result = await perform_url_analysis(request.url, request.legitimate_domain)
-        processing_time = (time.time() - start_time) * 1000
-        result["processing_time_ms"] = round(processing_time, 2)
-        return URLAnalysisResponse(**result)
+        # Parse URL
+        url_components = url_parser.parse(request.url)
         
+        if "error" in url_components:
+            raise HTTPException(status_code=400, detail=f"Invalid URL: {url_components['error']}")
+        
+        domain = url_components.get("registered_domain", "")
+        
+        # Domain analysis
+        domain_analysis = domain_analyzer.analyze(domain)
+        
+        # DNS analysis
+        dns_analysis = None
+        if request.include_dns:
+            dns_analysis = dns_analyzer.analyze(domain)
+        
+        # WHOIS analysis
+        whois_analysis = None
+        if request.include_whois:
+            whois_analysis = whois_analyzer.analyze(domain)
+            if whois_analysis.get("age_days"):
+                domain_analysis["age_days"] = whois_analysis["age_days"]
+        
+        # SSL analysis
+        ssl_analysis = None
+        if request.include_ssl:
+            ssl_analysis = ssl_analyzer.analyze(domain)
+            domain_analysis["has_valid_ssl"] = ssl_analysis.get("is_valid", False)
+        
+        # Redirect tracking
+        redirect_analysis = None
+        if request.track_redirects:
+            redirect_analysis = redirect_tracker.track(request.url)
+        
+        # Homoglyph detection
+        homoglyph_analysis = None
+        if request.check_homoglyph:
+            homoglyph_analysis = homoglyph_detector.check_against_popular_domains(domain)
+        
+        # Calculate reputation score
+        if dns_analysis:
+            domain_analysis["has_dns"] = dns_analysis.get("has_dns", False)
+        
+        reputation_result = reputation_scorer.calculate_score(domain_analysis)
+        
+        # GNN prediction (if model is loaded)
+        malicious_probability = 0.5  # Default
+        if gnn_classifier.model:
+            # Build simple graph for single domain
+            graph_data = graph_builder.build_domain_graph([{
+                **domain_analysis,
+                "domain": domain,
+                "reputation_score": reputation_result["reputation_score"]
+            }])
+            
+            gnn_result = gnn_classifier.predict(graph_data)
+            malicious_probability = gnn_result.get("malicious_probability", 0.5)
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        response = URLAnalysisResponse(
+            url=request.url,
+            is_malicious=malicious_probability > 0.5,
+            malicious_probability=malicious_probability,
+            confidence=abs(malicious_probability - 0.5) * 2,  # Normalized to 0-1
+            url_components=url_components,
+            domain_analysis=domain_analysis,
+            dns_analysis=dns_analysis,
+            whois_analysis=whois_analysis,
+            ssl_analysis=ssl_analysis,
+            redirect_analysis=redirect_analysis,
+            homoglyph_analysis=homoglyph_analysis,
+            reputation_score=reputation_result["reputation_score"],
+            risk_level=reputation_result["risk_level"],
+            processing_time_ms=processing_time,
+            cached=False
+        )
+        
+        # Cache result
+        await cache_service.set(cache_key, response.dict())
+        
+        return response
+    
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"URL analysis failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"URL analysis failed: {str(e)}")
+        logger.error(f"Error analyzing URL: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/analyze-domain", response_model=DomainAnalysisResponse)
 async def analyze_domain(request: DomainAnalysisRequest):
-    """Analyze domain using GNN and graph analysis"""
+    """Analyze domain using GNN"""
     start_time = time.time()
     
+    # Check cache
+    cache_key = cache_service.get_domain_cache_key(request.domain)
+    cached_result = await cache_service.get(cache_key)
+    if cached_result:
+        return cached_result
+    
     try:
-        # Check cache
-        cache_key = f"domain_analysis:{request.domain}"
-        if cache and cache.exists(cache_key):
-            cached_result = cache.get(cache_key)
-            if cached_result:
-                return DomainAnalysisResponse(**cached_result)
+        # Domain analysis
+        domain_features = domain_analyzer.analyze(request.domain)
         
-        # Basic domain analysis
-        domain_analysis = domain_analyzer.analyze(request.domain)
-        dns_analysis = dns_analyzer.analyze(request.domain)
-        whois_analysis = whois_analyzer.analyze(request.domain)
+        # Calculate reputation
+        reputation_result = reputation_scorer.calculate_score(domain_features)
         
-        analysis = {
-            "domain_analysis": domain_analysis,
-            "dns_analysis": dns_analysis,
-            "whois_analysis": whois_analysis
-        }
+        # GNN prediction
+        malicious_prob = 0.5
+        legitimate_prob = 0.5
         
-        graph_analysis = None
-        gnn_prediction = None
-        
-        if request.include_graph:
-            # Build graph (simplified - would need relationship data from database)
-            # For now, create a simple graph with just the domain
-            domains = [{
-                "id": request.domain,
+        if request.use_gnn and gnn_classifier.model:
+            graph_data = graph_builder.build_domain_graph([{
+                **domain_features,
                 "domain": request.domain,
-                "reputation_score": 50.0,
-                "age_days": whois_analysis.get("age_days", 0),
-                "is_malicious": False,
-                "is_suspicious": whois_analysis.get("is_suspicious", False)
-            }]
+                "reputation_score": reputation_result["reputation_score"]
+            }])
             
-            relationships = []  # Would come from database
-            
-            # Build graph
-            graph_data = graph_builder.build_domain_graph(domains, relationships)
-            
-            # Extract graph features
-            from src.graph.graph_features import GraphFeatureExtractor
-            feature_extractor = GraphFeatureExtractor()
-            nx_graph = graph_builder.build_networkx_graph(domains, relationships)
-            graph_features = feature_extractor.extract_features(nx_graph, request.domain)
-            global_features = feature_extractor.extract_global_features(nx_graph)
-            
-            graph_analysis = {
-                "node_features": graph_features,
-                "global_features": global_features
-            }
-            
-            # GNN prediction
-            try:
-                model = get_gnn_model()
-                if model:
-                    gnn_prediction = model.predict(graph_data)
-            except Exception as e:
-                logger.warning(f"GNN prediction failed: {e}")
+            gnn_result = gnn_classifier.predict(graph_data)
+            malicious_prob = gnn_result.get("malicious_probability", 0.5)
+            legitimate_prob = gnn_result.get("legitimate_probability", 0.5)
         
         processing_time = (time.time() - start_time) * 1000
         
-        result = {
-            "domain": request.domain,
-            "analysis": analysis,
-            "graph_analysis": graph_analysis,
-            "gnn_prediction": gnn_prediction,
-            "processing_time_ms": round(processing_time, 2)
-        }
+        response = DomainAnalysisResponse(
+            domain=request.domain,
+            malicious_probability=malicious_prob,
+            legitimate_probability=legitimate_prob,
+            confidence=abs(malicious_prob - legitimate_prob),
+            prediction="malicious" if malicious_prob > 0.5 else "legitimate",
+            domain_features=domain_features,
+            reputation_score=reputation_result["reputation_score"],
+            risk_level=reputation_result["risk_level"],
+            processing_time_ms=processing_time
+        )
         
         # Cache result
-        if cache:
-            cache.set(cache_key, result, ttl=3600)
+        await cache_service.set(cache_key, response.dict())
         
-        return DomainAnalysisResponse(**result)
-        
+        return response
+    
     except Exception as e:
-        logger.error(f"Domain analysis failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Domain analysis failed: {str(e)}")
+        logger.error(f"Error analyzing domain: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/check-redirect-chain", response_model=RedirectChainResponse)
-async def check_redirect_chain(request: RedirectChainRequest):
-    """Check redirect chain for URL"""
+
+@router.post("/check-redirect-chain")
+async def check_redirect_chain(request: RedirectCheckRequest):
+    """Check HTTP redirect chain"""
     try:
-        if not url_validator.is_valid_url(request.url):
-            sanitized = url_validator.sanitize_url(request.url)
-            if not sanitized:
-                raise HTTPException(status_code=400, detail="Invalid URL format")
-            request.url = sanitized
-        
         result = redirect_tracker.track(request.url)
-        return RedirectChainResponse(**result)
-    except HTTPException:
-        raise
+        return result
     except Exception as e:
-        logger.error(f"Redirect tracking failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Redirect tracking failed: {str(e)}")
+        logger.error(f"Error checking redirects: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/domain-reputation", response_model=DomainReputationResponse)
-async def get_domain_reputation(request: DomainReputationRequest):
-    """Get domain reputation score"""
+
+@router.post("/detect-homoglyph")
+async def detect_homoglyph(request: HomoglyphCheckRequest):
+    """Detect homoglyph attacks"""
     try:
-        # Get all analysis data
-        domain_analysis = domain_analyzer.analyze(request.domain)
-        dns_analysis = dns_analyzer.analyze(request.domain)
-        whois_analysis = whois_analyzer.analyze(request.domain)
-        
-        try:
-            ssl_analysis = ssl_analyzer.analyze(request.domain)
-        except:
-            ssl_analysis = None
-        
-        analysis_results = {
-            "domain_analysis": domain_analysis,
-            "dns_analysis": dns_analysis,
-            "whois_analysis": whois_analysis,
-            "ssl_analysis": ssl_analysis
-        }
-        
-        reputation = reputation_scorer.calculate_reputation(analysis_results)
-        
-        return DomainReputationResponse(
-            domain=request.domain,
-            **reputation
+        result = homoglyph_detector.detect(
+            request.domain,
+            request.legitimate_domain
         )
+        
+        # Also check against popular domains
+        brand_check = homoglyph_detector.check_against_popular_domains(request.domain)
+        result["brand_check"] = brand_check
+        
+        return result
     except Exception as e:
-        logger.error(f"Reputation calculation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Reputation calculation failed: {str(e)}")
+        logger.error(f"Error detecting homoglyphs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Health check endpoint"""
+    return HealthResponse(
+        status="healthy",
+        service=settings.service_name,
+        version=settings.service_version,
+        gnn_model_loaded=gnn_classifier.model is not None
+    )

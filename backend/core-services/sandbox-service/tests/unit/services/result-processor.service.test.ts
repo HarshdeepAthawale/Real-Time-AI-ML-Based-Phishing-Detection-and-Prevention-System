@@ -1,6 +1,9 @@
+import 'reflect-metadata';
 import { ResultProcessorService } from '../../../src/services/result-processor.service';
 import { BehavioralAnalyzerService } from '../../../src/services/behavioral-analyzer.service';
 import { DataSource, Repository } from 'typeorm';
+import { SandboxAnalysis } from '../../../../shared/database/models/SandboxAnalysis';
+import { Threat } from '../../../../shared/database/models/Threat';
 import { createMockSandboxClient } from '../../helpers/mocks';
 import {
   mockSandboxResult,
@@ -40,10 +43,10 @@ describe('ResultProcessorService', () => {
 
     mockDataSource = {
       getRepository: jest.fn((entity: any) => {
-        if (entity.name === 'SandboxAnalysis') {
+        if (entity === SandboxAnalysis) {
           return mockSandboxRepository;
         }
-        if (entity.name === 'Threat') {
+        if (entity === Threat) {
           return mockThreatRepository;
         }
         return mockSandboxRepository;

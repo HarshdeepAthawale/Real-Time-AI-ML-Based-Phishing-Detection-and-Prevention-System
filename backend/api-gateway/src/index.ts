@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { apiKeyAuth } from './middleware/apiKeyAuth';
@@ -31,6 +32,27 @@ app.use(requestLogger);
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// WebSocket routes (Socket.io) - no auth middleware as Socket.io handles auth in handshake
+// Socket.io connections go directly to detection-api service
+const detectionApiUrl = process.env.DETECTION_API_URL || 'http://detection-api:3001';
+app.use('/socket.io', createProxyMiddleware({
+  target: detectionApiUrl,
+  changeOrigin: true,
+  ws: true, // Enable WebSocket support
+  logLevel: process.env.NODE_ENV === 'development' ? 'debug' : 'warn',
+  onProxyReq: (proxyReq: any, req: any) => {
+    // Forward authentication headers for WebSocket upgrade
+    const apiKey = req.headers['x-api-key'];
+    const orgId = req.headers['x-organization-id'];
+    if (apiKey) {
+      proxyReq.setHeader('X-API-Key', apiKey);
+    }
+    if (orgId) {
+      proxyReq.setHeader('X-Organization-ID', orgId);
+    }
+  }
+}));
 
 // API routes
 app.use('/api/v1', apiKeyAuth, rateLimiter, setupRoutes());

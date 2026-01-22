@@ -1,1 +1,1 @@
-"""Page Rendering and Screenshot Capture"""
+"""Page rendering components"""

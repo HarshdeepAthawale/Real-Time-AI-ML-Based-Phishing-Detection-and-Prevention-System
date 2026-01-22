@@ -1,3 +1,5 @@
+import 'reflect-metadata';
+
 // Mock environment variables for testing
 process.env.NODE_ENV = 'test';
 process.env.PORT = '3004';

@@ -1,10 +1,23 @@
+"""WHOIS record analysis"""
 import whois
-from typing import Dict, Optional
+from typing import Dict
 from datetime import datetime
+from src.utils.logger import logger
+
 
 class WHOISAnalyzer:
+    """Analyze WHOIS data"""
+    
     def analyze(self, domain: str) -> Dict:
-        """Analyze WHOIS data"""
+        """
+        Analyze WHOIS data
+        
+        Args:
+            domain: Domain to analyze
+            
+        Returns:
+            Dictionary with WHOIS analysis
+        """
         results = {
             "domain": domain,
             "registered": False,
@@ -12,7 +25,6 @@ class WHOISAnalyzer:
             "expiration_date": None,
             "age_days": None,
             "registrar": None,
-            "registrant": None,
             "is_suspicious": False
         }
         
@@ -25,33 +37,24 @@ class WHOISAnalyzer:
                 
                 # Registration date
                 if w.creation_date:
-                    if isinstance(w.creation_date, list):
-                        reg_date = w.creation_date[0]
-                    else:
-                        reg_date = w.creation_date
-                    results["registration_date"] = reg_date.isoformat() if hasattr(reg_date, 'isoformat') else str(reg_date)
-                    
-                    # Calculate age
+                    reg_date = w.creation_date[0] if isinstance(w.creation_date, list) else w.creation_date
                     if isinstance(reg_date, datetime):
+                        results["registration_date"] = reg_date.isoformat()
                         age = (datetime.now() - reg_date).days
                         results["age_days"] = age
+                        
                         # Suspicious if domain is very new (< 30 days)
                         if age < 30:
                             results["is_suspicious"] = True
                 
                 # Expiration date
                 if w.expiration_date:
-                    if isinstance(w.expiration_date, list):
-                        exp_date = w.expiration_date[0]
-                    else:
-                        exp_date = w.expiration_date
-                    results["expiration_date"] = exp_date.isoformat() if hasattr(exp_date, 'isoformat') else str(exp_date)
-                
-                # Check for privacy protection (suspicious)
-                if w.registrant and 'privacy' in str(w.registrant).lower():
-                    results["is_suspicious"] = True
-                
+                    exp_date = w.expiration_date[0] if isinstance(w.expiration_date, list) else w.expiration_date
+                    if isinstance(exp_date, datetime):
+                        results["expiration_date"] = exp_date.isoformat()
+        
         except Exception as e:
-            results["error"] = str(e)
+            logger.debug(f"WHOIS lookup failed for {domain}: {e}")
+            results["error"] = "WHOIS lookup failed"
         
         return results

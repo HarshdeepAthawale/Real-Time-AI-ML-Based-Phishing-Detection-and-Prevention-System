@@ -1,8 +1,8 @@
 import { DataSource } from 'typeorm';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { config } from '../../../shared/config';
+import { config } from '../../../../shared/config';
 import { logger } from '../utils/logger';
-import { Detection, DetectionFeedback, Threat } from '../../../shared/database/models';
+import { Detection, DetectionFeedback, Threat } from '../../../../shared/database/models';
 
 export class DataCollectorService {
   private dataSource: DataSource;

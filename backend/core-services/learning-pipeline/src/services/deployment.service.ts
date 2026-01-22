@@ -1,9 +1,9 @@
 import { S3Client, CopyObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { ECSClient, UpdateServiceCommand, DescribeServicesCommand } from '@aws-sdk/client-ecs';
 import { DataSource } from 'typeorm';
-import { config } from '../../../shared/config';
+import { config } from '../../../../shared/config';
 import { logger } from '../utils/logger';
-import { MLModel, ModelVersion } from '../../../shared/database/models';
+import { MLModel, ModelVersion } from '../../../../shared/database/models';
 
 export type DeploymentStrategy = 'canary' | 'blue-green' | 'rolling' | 'immediate';
 

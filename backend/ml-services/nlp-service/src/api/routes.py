@@ -1,85 +1,63 @@
+"""API route handlers"""
+import time
 from fastapi import APIRouter, HTTPException, Depends
 from src.api.schemas import (
-    TextAnalysisRequest, 
-    EmailAnalysisRequest, 
-    AnalysisResponse,
-    AIDetectionResponse
+    TextAnalysisRequest, EmailAnalysisRequest, AIContentDetectionRequest,
+    AnalysisResponse, AIDetectionResponse, HealthResponse, ModelInfoResponse
 )
-from src.models.phishing_classifier import PhishingClassifier
-from src.models.ai_detector import AIGeneratedDetector
+from src.models.model_loader import model_loader
 from src.preprocessing.text_normalizer import TextNormalizer
 from src.preprocessing.email_parser import EmailParser
+from src.preprocessing.feature_extractor import FeatureExtractor
 from src.analyzers.urgency_analyzer import UrgencyAnalyzer
 from src.analyzers.sentiment_analyzer import SentimentAnalyzer
 from src.analyzers.social_engineering import SocialEngineeringAnalyzer
-from src.models.feature_extractor import FeatureExtractor
-from src.utils.model_loader import ModelLoader
-from src.utils.cache import RedisCache
-import time
-import logging
-
-logger = logging.getLogger(__name__)
+from src.utils.cache import cache_service
+from src.utils.logger import logger
+from src.config import settings
 
 router = APIRouter()
 
-# Initialize analyzers (singleton pattern)
+# Initialize analyzers (singletons)
 text_normalizer = TextNormalizer()
 email_parser = EmailParser()
+feature_extractor = FeatureExtractor()
 urgency_analyzer = UrgencyAnalyzer()
 sentiment_analyzer = SentimentAnalyzer()
-social_engineering_analyzer = SocialEngineeringAnalyzer()
-feature_extractor = FeatureExtractor()
+se_analyzer = SocialEngineeringAnalyzer()
 
-# Initialize Redis cache (graceful fallback if unavailable)
-try:
-    cache = RedisCache()
-    logger.info("Redis cache initialized")
-except Exception as e:
-    logger.warning(f"Redis cache initialization failed: {e}. Caching will be disabled.")
-    cache = None
-
-def get_models():
-    """Dependency to get loaded models"""
-    loader = ModelLoader.get_instance()
-    if loader is None:
-        raise HTTPException(status_code=503, detail="Models not loaded")
-    return loader
 
 @router.post("/analyze-text", response_model=AnalysisResponse)
-async def analyze_text(
-    request: TextAnalysisRequest,
-    models: ModelLoader = Depends(get_models)
-):
-    """
-    Analyze text for phishing indicators.
-    
-    This endpoint performs comprehensive analysis including:
-    - Phishing probability detection using transformer models
-    - AI-generated content detection
-    - Urgency score calculation
-    - Sentiment analysis
-    - Social engineering indicators
-    
-    Results are cached for 1 hour to improve performance.
-    """
+async def analyze_text(request: TextAnalysisRequest):
+    """Analyze text for phishing indicators"""
     start_time = time.time()
     
+    # Check cache
+    cache_key = cache_service.get_text_cache_key(request.text)
+    cached_result = await cache_service.get(cache_key)
+    if cached_result:
+        cached_result["cached"] = True
+        return cached_result
+    
     try:
-        # Check cache first
-        if cache:
-            cached_result = cache.get_analysis(request.text)
-            if cached_result:
-                logger.debug("Returning cached result for text analysis")
-                return AnalysisResponse(**cached_result)
-        
         # Normalize text
         normalized_text = text_normalizer.normalize(request.text)
         
         # Phishing detection
-        phishing_result = models.phishing_classifier.predict(normalized_text)
+        if model_loader.phishing_classifier:
+            phishing_result = model_loader.phishing_classifier.predict(normalized_text)
+        else:
+            phishing_result = {
+                "phishing_probability": 0.0,
+                "legitimate_probability": 1.0,
+                "confidence": 0.0,
+                "prediction": "unknown"
+            }
         
         # AI detection
-        ai_result = models.ai_detector.detect(normalized_text)
+        ai_result = {"ai_generated_probability": 0.0}
+        if model_loader.ai_detector:
+            ai_result = model_loader.ai_detector.detect(normalized_text)
         
         # Urgency analysis
         urgency_result = urgency_analyzer.analyze(request.text)
@@ -88,89 +66,95 @@ async def analyze_text(
         sentiment_result = sentiment_analyzer.analyze(request.text)
         
         # Social engineering analysis
-        se_result = social_engineering_analyzer.analyze(request.text)
+        se_result = se_analyzer.analyze(request.text)
         
         # Extract features if requested
         features = None
         if request.include_features:
-            features = models.phishing_classifier.extract_features(normalized_text)
-            linguistic_features = feature_extractor.extract_linguistic_features(request.text)
-            features.update({
-                "linguistic": linguistic_features,
+            features = {
+                "text_features": feature_extractor.extract_text_features(request.text),
                 "urgency": urgency_result,
                 "sentiment": sentiment_result,
-                "social_engineering": se_result
-            })
+                "social_engineering": se_result,
+                "ai_detection": ai_result
+            }
         
         processing_time = (time.time() - start_time) * 1000
         
-        result = AnalysisResponse(
-            phishing_probability=phishing_result["phishing_probability"],
-            legitimate_probability=phishing_result["legitimate_probability"],
-            confidence=phishing_result["confidence"],
-            prediction=phishing_result["prediction"],
-            ai_generated_probability=ai_result["ai_generated_probability"],
-            urgency_score=urgency_result["urgency_score"],
-            sentiment=sentiment_result["sentiment"],
-            social_engineering_score=se_result["social_engineering_score"],
+        response = AnalysisResponse(
+            phishing_probability=phishing_result.get("phishing_probability", 0.0),
+            legitimate_probability=phishing_result.get("legitimate_probability", 1.0),
+            confidence=phishing_result.get("confidence", 0.0),
+            prediction=phishing_result.get("prediction", "unknown"),
+            ai_generated_probability=ai_result.get("ai_generated_probability"),
+            urgency_score=urgency_result.get("urgency_score"),
+            sentiment=sentiment_result.get("sentiment"),
+            social_engineering_score=se_result.get("social_engineering_score"),
             features=features,
-            processing_time_ms=round(processing_time, 2)
+            processing_time_ms=processing_time,
+            cached=False
         )
         
         # Cache result
-        if cache:
-            try:
-                result_dict = result.model_dump()
-                cache.set_analysis(request.text, result_dict, ttl=3600)
-                logger.debug("Cached text analysis result")
-            except Exception as e:
-                logger.warning(f"Failed to cache result: {e}")
+        await cache_service.set(cache_key, response.dict())
         
-        return result
+        return response
+    
     except Exception as e:
-        logger.error(f"Text analysis error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        logger.error(f"Error analyzing text: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/analyze-email", response_model=AnalysisResponse)
-async def analyze_email(
-    request: EmailAnalysisRequest,
-    models: ModelLoader = Depends(get_models)
-):
-    """
-    Analyze email for phishing indicators.
-    
-    Parses raw email content and performs comprehensive analysis including:
-    - Email header parsing (From, To, Subject)
-    - Body text extraction (text and HTML)
-    - Phishing probability detection
-    - AI-generated content detection
-    - Urgency and sentiment analysis
-    - Social engineering indicators
-    
-    Results are cached for 1 hour to improve performance.
-    """
+async def analyze_email(request: EmailAnalysisRequest):
+    """Analyze email for phishing indicators"""
     start_time = time.time()
     
     try:
-        # Check cache first (use raw_email as key)
-        if cache:
-            cached_result = cache.get_analysis(request.raw_email)
-            if cached_result:
-                logger.debug("Returning cached result for email analysis")
-                return AnalysisResponse(**cached_result)
-        
-        # Parse email
-        parsed_email = email_parser.parse(request.raw_email)
+        # Parse email if raw format provided
+        if request.raw_email:
+            parsed_email = email_parser.parse(request.raw_email)
+            subject = parsed_email.get("subject", "")
+            body = parsed_email.get("body_text", "")
+            sender = parsed_email.get("from", "")
+        else:
+            subject = request.subject or ""
+            body = request.body or ""
+            sender = request.sender or ""
+            parsed_email = {
+                "subject": subject,
+                "body_text": body,
+                "from": sender
+            }
         
         # Combine subject and body for analysis
-        combined_text = f"{parsed_email['subject']} {parsed_email['body_text']}"
+        combined_text = f"{subject} {body}"
+        
+        # Check cache
+        cache_key = cache_service.get_email_cache_key(combined_text)
+        cached_result = await cache_service.get(cache_key)
+        if cached_result:
+            cached_result["cached"] = True
+            return cached_result
+        
+        # Normalize text
         normalized_text = text_normalizer.normalize(combined_text)
         
         # Phishing detection
-        phishing_result = models.phishing_classifier.predict(normalized_text)
+        if model_loader.phishing_classifier:
+            phishing_result = model_loader.phishing_classifier.predict(normalized_text)
+        else:
+            phishing_result = {
+                "phishing_probability": 0.0,
+                "legitimate_probability": 1.0,
+                "confidence": 0.0,
+                "prediction": "unknown"
+            }
         
         # AI detection
-        ai_result = models.ai_detector.detect(normalized_text)
+        ai_result = {"ai_generated_probability": 0.0}
+        if model_loader.ai_detector:
+            ai_result = model_loader.ai_detector.detect(normalized_text)
         
         # Urgency analysis
         urgency_result = urgency_analyzer.analyze(combined_text)
@@ -179,76 +163,92 @@ async def analyze_email(
         sentiment_result = sentiment_analyzer.analyze(combined_text)
         
         # Social engineering analysis
-        se_result = social_engineering_analyzer.analyze(combined_text)
+        se_result = se_analyzer.analyze(combined_text)
         
         # Extract features if requested
         features = None
         if request.include_features:
-            features = models.phishing_classifier.extract_features(normalized_text)
-            linguistic_features = feature_extractor.extract_linguistic_features(combined_text)
-            features.update({
-                "linguistic": linguistic_features,
+            features = {
+                "email_features": feature_extractor.extract_email_features(parsed_email),
                 "urgency": urgency_result,
                 "sentiment": sentiment_result,
                 "social_engineering": se_result,
-                "email_metadata": {
-                    "from": parsed_email.get("from", ""),
-                    "subject": parsed_email.get("subject", ""),
-                    "has_html": parsed_email.get("body_html") is not None
-                }
-            })
+                "ai_detection": ai_result
+            }
         
         processing_time = (time.time() - start_time) * 1000
         
-        result = AnalysisResponse(
-            phishing_probability=phishing_result["phishing_probability"],
-            legitimate_probability=phishing_result["legitimate_probability"],
-            confidence=phishing_result["confidence"],
-            prediction=phishing_result["prediction"],
-            ai_generated_probability=ai_result["ai_generated_probability"],
-            urgency_score=urgency_result["urgency_score"],
-            sentiment=sentiment_result["sentiment"],
-            social_engineering_score=se_result["social_engineering_score"],
+        response = AnalysisResponse(
+            phishing_probability=phishing_result.get("phishing_probability", 0.0),
+            legitimate_probability=phishing_result.get("legitimate_probability", 1.0),
+            confidence=phishing_result.get("confidence", 0.0),
+            prediction=phishing_result.get("prediction", "unknown"),
+            ai_generated_probability=ai_result.get("ai_generated_probability"),
+            urgency_score=urgency_result.get("urgency_score"),
+            sentiment=sentiment_result.get("sentiment"),
+            social_engineering_score=se_result.get("social_engineering_score"),
             features=features,
-            processing_time_ms=round(processing_time, 2)
+            processing_time_ms=processing_time,
+            cached=False
         )
         
         # Cache result
-        if cache:
-            try:
-                result_dict = result.model_dump()
-                cache.set_analysis(request.raw_email, result_dict, ttl=3600)
-                logger.debug("Cached email analysis result")
-            except Exception as e:
-                logger.warning(f"Failed to cache result: {e}")
+        await cache_service.set(cache_key, response.dict())
         
-        return result
+        return response
+    
     except Exception as e:
-        logger.error(f"Email analysis error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        logger.error(f"Error analyzing email: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/detect-ai-content", response_model=AIDetectionResponse)
-async def detect_ai_content(
-    text: str,
-    models: ModelLoader = Depends(get_models)
-):
-    """
-    Detect if content is AI-generated.
-    
-    Uses a fine-tuned RoBERTa model to distinguish between
-    AI-generated and human-written text.
-    
-    Returns probability scores and confidence level.
-    """
+async def detect_ai_content(request: AIContentDetectionRequest):
+    """Detect if content is AI-generated"""
     try:
-        normalized_text = text_normalizer.normalize(text)
-        result = models.ai_detector.detect(normalized_text)
-        return AIDetectionResponse(
-            ai_generated_probability=result["ai_generated_probability"],
-            human_written_probability=result["human_written_probability"],
-            is_ai_generated=result["is_ai_generated"],
-            confidence=result["confidence"]
-        )
+        if model_loader.ai_detector:
+            result = model_loader.ai_detector.detect(request.text)
+            return AIDetectionResponse(**result)
+        else:
+            return AIDetectionResponse(
+                ai_generated_probability=0.0,
+                human_written_probability=1.0,
+                is_ai_generated=False,
+                confidence=0.0,
+                model_loaded=False
+            )
     except Exception as e:
-        logger.error(f"AI detection error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"AI detection failed: {str(e)}")
+        logger.error(f"Error detecting AI content: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Health check endpoint"""
+    return HealthResponse(
+        status="healthy",
+        service=settings.service_name,
+        version=settings.service_version,
+        models_loaded=model_loader.is_loaded()
+    )
+
+
+@router.get("/models/info", response_model=ModelInfoResponse)
+async def get_model_info():
+    """Get information about loaded models"""
+    phishing_info = {
+        "loaded": model_loader.phishing_classifier is not None and model_loader.phishing_classifier.model is not None,
+        "path": settings.phishing_model_path,
+        "device": settings.inference_device
+    }
+    
+    ai_detector_info = {
+        "loaded": model_loader.ai_detector is not None and model_loader.ai_detector.model is not None,
+        "path": settings.ai_detector_model_path,
+        "device": settings.inference_device
+    }
+    
+    return ModelInfoResponse(
+        phishing_classifier=phishing_info,
+        ai_detector=ai_detector_info
+    )

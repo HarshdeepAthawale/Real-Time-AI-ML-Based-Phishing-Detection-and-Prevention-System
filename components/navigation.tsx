@@ -1,19 +1,41 @@
 'use client';
 
-import { Shield, Eye, Zap, Settings, LogOut } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Shield, Eye, Zap, Settings, LogOut, Search, FlaskConical, Database, Rss } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 interface NavigationProps {
-  activeTab: string
-  setActiveTab: (tab: string) => void
+  activeTab?: string
+  setActiveTab?: (tab: string) => void
 }
 
 export default function Navigation({ activeTab, setActiveTab }: NavigationProps) {
+  const pathname = usePathname()
+  const router = useRouter()
+
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Shield },
-    { id: 'monitoring', label: 'Monitoring', icon: Eye },
-    { id: 'intelligence', label: 'Threat Intelligence', icon: Zap },
+    { id: 'dashboard', label: 'Dashboard', icon: Shield, path: '/' },
+    { id: 'detection', label: 'Detection', icon: Search, path: '/detection' },
+    { id: 'monitoring', label: 'Monitoring', icon: Eye, path: '/monitoring' },
+    { id: 'intelligence', label: 'Threat Intelligence', icon: Zap, path: '/intelligence' },
+    { id: 'sandbox', label: 'Sandbox', icon: FlaskConical, path: '/sandbox' },
+    { id: 'iocs', label: 'IOCs', icon: Database, path: '/iocs' },
+    { id: 'feeds', label: 'Feeds', icon: Rss, path: '/feeds' },
   ]
+
+  const isActive = (path: string) => {
+    if (path === '/') {
+      return pathname === '/'
+    }
+    return pathname?.startsWith(path)
+  }
+
+  const handleClick = (item: { id: string; path: string }) => {
+    if (setActiveTab) {
+      setActiveTab(item.id)
+    }
+    router.push(item.path)
+  }
 
   return (
     <nav className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
@@ -21,22 +43,21 @@ export default function Navigation({ activeTab, setActiveTab }: NavigationProps)
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
           <Shield className="w-6 h-6 text-primary" />
-          <span className="text-lg font-bold text-sidebar-foreground">Real-Time-AI-ML-Based-Phishing-Detection-and-Prevention-System</span>
+          <span className="font-semibold text-sidebar-foreground">Phishing Detection</span>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">AI-Powered Security</p>
       </div>
 
       {/* Menu Items */}
-      <div className="flex-1 py-6 px-4 space-y-2">
+      <div className="flex-1 py-6 px-4 space-y-2 overflow-y-auto">
         {menuItems.map((item) => {
           const Icon = item.icon
-          const isActive = activeTab === item.id
+          const active = isActive(item.path)
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => handleClick(item)}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                isActive
+                active
                   ? 'bg-sidebar-primary text-sidebar-primary-foreground'
                   : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
               }`}
@@ -50,10 +71,17 @@ export default function Navigation({ activeTab, setActiveTab }: NavigationProps)
 
       {/* Bottom Section */}
       <div className="p-4 border-t border-sidebar-border space-y-2">
-        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent transition-colors">
+        <Link
+          href="/settings"
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+            pathname === '/settings'
+              ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+              : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+          }`}
+        >
           <Settings className="w-5 h-5" />
           <span className="text-sm font-medium">Settings</span>
-        </button>
+        </Link>
         <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sidebar-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors">
           <LogOut className="w-5 h-5" />
           <span className="text-sm font-medium">Logout</span>

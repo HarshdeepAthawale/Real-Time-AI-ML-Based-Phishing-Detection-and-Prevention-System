@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { FileAnalyzerService } from '../../../src/services/file-analyzer.service';
 import { mockFileBuffer } from '../../fixtures/mock-data';
 

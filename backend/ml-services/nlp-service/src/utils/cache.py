@@ -1,95 +1,55 @@
-import redis
+"""Redis caching utilities"""
 import json
 import hashlib
 from typing import Optional, Any
-import os
-import logging
+import redis
+from src.config import settings
+from src.utils.logger import logger
 
-logger = logging.getLogger(__name__)
 
-class RedisCache:
-    """Redis caching utility for NLP service"""
+class CacheService:
+    """Redis cache service for ML inference results"""
     
-    def __init__(self, redis_url: str = None):
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
-        self.client = None
-        self._connect()
+    def __init__(self):
+        self.redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+        self.ttl = settings.cache_ttl
     
-    def _connect(self):
-        """Connect to Redis"""
+    def _generate_key(self, prefix: str, data: str) -> str:
+        """Generate cache key from data"""
+        hash_obj = hashlib.sha256(data.encode())
+        return f"{prefix}:{hash_obj.hexdigest()[:16]}"
+    
+    async def get(self, key: str) -> Optional[dict]:
+        """Get cached result"""
         try:
-            self.client = redis.from_url(self.redis_url, decode_responses=True)
-            # Test connection
-            self.client.ping()
-            logger.info("Connected to Redis")
-        except Exception as e:
-            logger.warning(f"Failed to connect to Redis: {e}. Caching disabled.")
-            self.client = None
-    
-    def _generate_key(self, prefix: str, text: str) -> str:
-        """Generate cache key from text"""
-        text_hash = hashlib.sha256(text.encode()).hexdigest()
-        return f"nlp:{prefix}:{text_hash}"
-    
-    def get(self, key: str) -> Optional[Any]:
-        """Get value from cache"""
-        if not self.client:
-            return None
-        
-        try:
-            value = self.client.get(key)
-            if value:
-                return json.loads(value)
+            cached = self.redis_client.get(key)
+            if cached:
+                logger.debug(f"Cache hit for key: {key}")
+                return json.loads(cached)
+            logger.debug(f"Cache miss for key: {key}")
             return None
         except Exception as e:
-            logger.warning(f"Cache get error: {e}")
+            logger.error(f"Cache get error: {e}")
             return None
     
-    def set(self, key: str, value: Any, ttl: int = 3600):
-        """Set value in cache with TTL"""
-        if not self.client:
-            return False
-        
+    async def set(self, key: str, value: dict, ttl: Optional[int] = None) -> bool:
+        """Set cache value"""
         try:
-            serialized = json.dumps(value)
-            self.client.setex(key, ttl, serialized)
+            ttl = ttl or self.ttl
+            self.redis_client.setex(key, ttl, json.dumps(value))
+            logger.debug(f"Cached result for key: {key}")
             return True
         except Exception as e:
-            logger.warning(f"Cache set error: {e}")
+            logger.error(f"Cache set error: {e}")
             return False
     
-    def get_analysis(self, text: str) -> Optional[dict]:
-        """Get cached analysis result"""
-        key = self._generate_key("analysis", text)
-        return self.get(key)
+    def get_text_cache_key(self, text: str) -> str:
+        """Generate cache key for text analysis"""
+        return self._generate_key("nlp:text", text)
     
-    def set_analysis(self, text: str, result: dict, ttl: int = 3600):
-        """Cache analysis result"""
-        key = self._generate_key("analysis", text)
-        return self.set(key, result, ttl)
-    
-    def delete(self, key: str):
-        """Delete key from cache"""
-        if not self.client:
-            return False
-        
-        try:
-            self.client.delete(key)
-            return True
-        except Exception as e:
-            logger.warning(f"Cache delete error: {e}")
-            return False
-    
-    def clear_pattern(self, pattern: str):
-        """Clear all keys matching pattern"""
-        if not self.client:
-            return False
-        
-        try:
-            keys = self.client.keys(pattern)
-            if keys:
-                self.client.delete(*keys)
-            return True
-        except Exception as e:
-            logger.warning(f"Cache clear pattern error: {e}")
-            return False
+    def get_email_cache_key(self, email: str) -> str:
+        """Generate cache key for email analysis"""
+        return self._generate_key("nlp:email", email)
+
+
+cache_service = CacheService()

@@ -1,21 +1,38 @@
-from playwright.async_api import async_playwright, Page, Browser
-from typing import Dict, Optional
+"""Playwright-based page renderer"""
 import asyncio
 import base64
-from io import BytesIO
+from typing import Dict, Optional
+from playwright.async_api import async_playwright, Browser, Page
+from src.config import settings
+from src.utils.logger import logger
+
 
 class PageRenderer:
+    """Render pages using Playwright headless browser"""
+    
     def __init__(self):
         self.browser: Optional[Browser] = None
         self.playwright = None
+        self.timeout = settings.browser_timeout
     
     async def initialize(self):
         """Initialize browser"""
-        self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=True)
+        if not self.playwright:
+            self.playwright = await async_playwright().start()
+            self.browser = await self.playwright.chromium.launch(headless=True)
+            logger.info("Playwright browser initialized")
     
     async def render_page(self, url: str, wait_time: int = 3000) -> Dict:
-        """Render page and capture screenshot"""
+        """
+        Render page and capture screenshot
+        
+        Args:
+            url: URL to render
+            wait_time: Time to wait for page to load (ms)
+            
+        Returns:
+            Dictionary with screenshot and DOM data
+        """
         if not self.browser:
             await self.initialize()
         
@@ -28,15 +45,15 @@ class PageRenderer:
         
         try:
             # Navigate to URL
-            response = await page.goto(url, wait_until='networkidle', timeout=30000)
+            response = await page.goto(url, wait_until='networkidle', timeout=self.timeout)
             
             # Wait for page to stabilize
             await asyncio.sleep(wait_time / 1000)
             
             # Capture screenshot
-            screenshot_bytes = await page.screenshot(full_page=True)
+            screenshot_bytes = await page.screenshot(full_page=True, quality=settings.screenshot_quality)
             
-            # Get DOM
+            # Get DOM content
             dom_content = await page.content()
             
             # Get page metrics
@@ -53,16 +70,22 @@ class PageRenderer:
             
             return {
                 "screenshot": base64.b64encode(screenshot_bytes).decode(),
+                "screenshot_bytes": screenshot_bytes,
                 "dom": dom_content,
                 "status_code": response.status if response else None,
                 "metrics": metrics,
-                "url": url
+                "url": url,
+                "success": True
             }
+        
         except Exception as e:
+            logger.error(f"Error rendering page {url}: {e}")
             return {
                 "error": str(e),
-                "url": url
+                "url": url,
+                "success": False
             }
+        
         finally:
             await page.close()
             await context.close()
@@ -71,5 +94,11 @@ class PageRenderer:
         """Close browser"""
         if self.browser:
             await self.browser.close()
+            logger.info("Browser closed")
         if self.playwright:
             await self.playwright.stop()
+            logger.info("Playwright stopped")
+
+
+# Global instance
+page_renderer = PageRenderer()

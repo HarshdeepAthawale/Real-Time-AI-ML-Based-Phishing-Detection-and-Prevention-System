@@ -1,1 +1,1 @@
-"""URL and Domain Analyzers"""
+"""URL and domain analyzers"""

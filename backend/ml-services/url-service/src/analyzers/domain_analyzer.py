@@ -1,10 +1,22 @@
+"""Domain characteristics analyzer"""
 from typing import Dict, List
 import re
-from datetime import datetime
+import math
+
 
 class DomainAnalyzer:
+    """Analyze domain characteristics"""
+    
     def analyze(self, domain: str) -> Dict:
-        """Analyze domain characteristics"""
+        """
+        Analyze domain characteristics
+        
+        Args:
+            domain: Domain name to analyze
+            
+        Returns:
+            Dictionary with domain analysis
+        """
         return {
             "domain": domain,
             "length": len(domain),
@@ -13,40 +25,47 @@ class DomainAnalyzer:
             "has_hyphens": '-' in domain,
             "character_entropy": self._calculate_entropy(domain),
             "suspicious_patterns": self._detect_suspicious_patterns(domain),
-            "is_ip_address": self._is_ip_address(domain)
+            "is_ip_address": self._is_ip_address(domain),
+            "vowel_consonant_ratio": self._vowel_consonant_ratio(domain)
         }
     
     def _calculate_entropy(self, text: str) -> float:
         """Calculate Shannon entropy"""
-        import math
         if not text:
             return 0
+        
         entropy = 0
         for char in set(text):
             p = text.count(char) / len(text)
             entropy -= p * math.log2(p)
-        return entropy
+        
+        return round(entropy, 2)
     
     def _detect_suspicious_patterns(self, domain: str) -> List[str]:
         """Detect suspicious domain patterns"""
         patterns = []
         
-        # Check for homoglyphs (common lookalike characters)
-        homoglyph_patterns = [
-            (r'[0-9]', 'numbers_in_domain'),
-            (r'[а-я]', 'cyrillic_characters'),
-            (r'[α-ω]', 'greek_characters'),
-        ]
+        # Check for numbers
+        if re.search(r'\d', domain):
+            patterns.append('contains_numbers')
         
-        for pattern, name in homoglyph_patterns:
-            if re.search(pattern, domain):
-                patterns.append(name)
+        # Check for excessive hyphens
+        if domain.count('-') > 2:
+            patterns.append('excessive_hyphens')
         
         # Check for suspicious keywords
-        suspicious_keywords = ['secure', 'verify', 'update', 'account', 'login', 'bank']
+        suspicious_keywords = ['secure', 'verify', 'update', 'account', 'login', 'bank', 'paypal', 'microsoft']
         for keyword in suspicious_keywords:
             if keyword in domain.lower():
                 patterns.append(f'suspicious_keyword_{keyword}')
+        
+        # Check for homoglyph characters (basic detection)
+        if any(ord(c) > 127 for c in domain):
+            patterns.append('non_ascii_characters')
+        
+        # Check for excessive length
+        if len(domain) > 30:
+            patterns.append('excessive_length')
         
         return patterns
     
@@ -54,3 +73,14 @@ class DomainAnalyzer:
         """Check if domain is an IP address"""
         ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
         return bool(re.match(ip_pattern, domain))
+    
+    def _vowel_consonant_ratio(self, domain: str) -> float:
+        """Calculate vowel to consonant ratio"""
+        vowels = 'aeiou'
+        vowel_count = sum(1 for c in domain.lower() if c in vowels)
+        consonant_count = sum(1 for c in domain.lower() if c.isalpha() and c not in vowels)
+        
+        if consonant_count == 0:
+            return 0.0
+        
+        return round(vowel_count / consonant_count, 2)

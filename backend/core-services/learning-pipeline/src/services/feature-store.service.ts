@@ -1,5 +1,5 @@
 import { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { config } from '../../../shared/config';
+import { config } from '../../../../shared/config';
 import { logger } from '../utils/logger';
 
 export interface DatasetInfo {

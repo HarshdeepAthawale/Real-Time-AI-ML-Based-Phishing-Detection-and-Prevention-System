@@ -1,201 +1,456 @@
 import axios, { AxiosInstance } from 'axios';
-import FormData from 'form-data';
-import { BaseSandboxClient, SandboxResult, NetworkActivity, FileSystemActivity, ProcessActivity, SandboxSubmitOptions } from './base-sandbox.client';
 import { logger } from '../utils/logger';
+import FormData from 'form-data';
 
-export class CuckooClient extends BaseSandboxClient {
+export interface CuckooSubmissionResult {
+  success: boolean;
+  taskId: number;
+  submissionTime: Date;
+}
+
+export interface CuckooAnalysisResult {
+  taskId: number;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  verdict: 'malicious' | 'suspicious' | 'clean' | 'unknown';
+  score: number; // 0-10
+  malwareFamily?: string;
+  tags: string[];
+  signatures: Array<{
+    name: string;
+    description: string;
+    severity: number;
+    marks: number;
+  }>;
+  network: {
+    hosts: string[];
+    domains: string[];
+    http: Array<{
+      method: string;
+      host: string;
+      uri: string;
+      status: number;
+    }>;
+    dns: Array<{
+      request: string;
+      answers: string[];
+    }>;
+    tcp: Array<{
+      src: string;
+      dst: string;
+      dport: number;
+    }>;
+    udp: Array<{
+      src: string;
+      dst: string;
+      dport: number;
+    }>;
+  };
+  processes: Array<{
+    process_name: string;
+    process_id: number;
+    parent_id: number;
+    command_line: string;
+    first_seen: number;
+  }>;
+  files: Array<{
+    name: string;
+    path: string;
+    md5: string;
+    sha1: string;
+    sha256: string;
+    type: string;
+  }>;
+  registry: Array<{
+    key: string;
+    value: string;
+    data: string;
+  }>;
+  dropped: Array<{
+    name: string;
+    path: string;
+    size: number;
+    md5: string;
+    type: string;
+  }>;
+  screenshots: string[];
+  mitre: Array<{
+    id: string;
+    tactic: string;
+    technique: string;
+    description: string;
+  }>;
+}
+
+export class CuckooClient {
   private client: AxiosInstance;
+  private apiToken: string;
   private baseURL: string;
-  
-  constructor(baseURL: string, apiKey?: string) {
-    super();
-    this.baseURL = baseURL;
+  private enabled: boolean;
+
+  constructor() {
+    this.apiToken = process.env.CUCKOO_API_TOKEN || '';
+    this.baseURL = process.env.CUCKOO_URL || 'http://localhost:8090';
+    this.enabled = !!this.apiToken;
+
     this.client = axios.create({
-      baseURL: `${baseURL}/api`,
-      headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {},
-      timeout: 30000,
+      baseURL: this.baseURL,
+      headers: {
+        'Authorization': `Bearer ${this.apiToken}`
+      },
+      timeout: 30000
     });
+
+    if (!this.enabled) {
+      logger.warn('Cuckoo Sandbox client disabled - no API token configured');
+    }
   }
-  
-  async submitFile(fileBuffer: Buffer, filename: string, options?: SandboxSubmitOptions): Promise<string> {
+
+  /**
+   * Check if Cuckoo is enabled
+   */
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  /**
+   * Test API connection
+   */
+  async testConnection(): Promise<boolean> {
+    if (!this.enabled) return false;
+
+    try {
+      const response = await this.client.get('/cuckoo/status');
+      logger.info('Cuckoo Sandbox connection successful');
+      return response.status === 200;
+    } catch (error: any) {
+      logger.error(`Cuckoo connection failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Submit URL for analysis
+   */
+  async submitURL(url: string, options: {
+    package?: string;
+    timeout?: number;
+    priority?: number;
+    tags?: string[];
+    memory?: boolean;
+    enforce_timeout?: boolean;
+  } = {}): Promise<CuckooSubmissionResult> {
+    if (!this.enabled) {
+      throw new Error('Cuckoo Sandbox is not configured');
+    }
+
     try {
       const formData = new FormData();
-      formData.append('file', fileBuffer, filename);
+      formData.append('url', url);
       
-      if (options?.timeout) {
-        formData.append('timeout', options.timeout.toString());
-      }
+      if (options.package) formData.append('package', options.package);
+      if (options.timeout) formData.append('timeout', String(options.timeout));
+      if (options.priority) formData.append('priority', String(options.priority));
+      if (options.tags) formData.append('tags', options.tags.join(','));
+      if (options.memory !== undefined) formData.append('memory', String(options.memory));
+      if (options.enforce_timeout !== undefined) formData.append('enforce_timeout', String(options.enforce_timeout));
+
+      logger.info(`Submitting URL to Cuckoo: ${url}`);
+
+      const response = await this.client.post('/tasks/create/url', formData, {
+        headers: formData.getHeaders()
+      });
+
+      const taskId = response.data.task_id;
+
+      logger.info(`Cuckoo submission successful: ${taskId}`);
+
+      return {
+        success: true,
+        taskId,
+        submissionTime: new Date()
+      };
+    } catch (error: any) {
+      logger.error(`Cuckoo submission failed: ${error.message}`);
+      throw new Error(`Failed to submit URL to Cuckoo: ${error.message}`);
+    }
+  }
+
+  /**
+   * Submit file for analysis
+   */
+  async submitFile(fileBuffer: Buffer, fileName: string, options: {
+    package?: string;
+    timeout?: number;
+    priority?: number;
+    tags?: string[];
+    memory?: boolean;
+    enforce_timeout?: boolean;
+  } = {}): Promise<CuckooSubmissionResult> {
+    if (!this.enabled) {
+      throw new Error('Cuckoo Sandbox is not configured');
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('file', fileBuffer, fileName);
       
+      if (options.package) formData.append('package', options.package);
+      if (options.timeout) formData.append('timeout', String(options.timeout));
+      if (options.priority) formData.append('priority', String(options.priority));
+      if (options.tags) formData.append('tags', options.tags.join(','));
+      if (options.memory !== undefined) formData.append('memory', String(options.memory));
+      if (options.enforce_timeout !== undefined) formData.append('enforce_timeout', String(options.enforce_timeout));
+
+      logger.info(`Submitting file to Cuckoo: ${fileName}`);
+
       const response = await this.client.post('/tasks/create/file', formData, {
-        headers: {
-          ...formData.getHeaders(),
-        },
+        headers: formData.getHeaders()
       });
-      
-      return response.data.task_id.toString();
+
+      const taskId = response.data.task_id;
+
+      logger.info(`Cuckoo file submission successful: ${taskId}`);
+
+      return {
+        success: true,
+        taskId,
+        submissionTime: new Date()
+      };
     } catch (error: any) {
-      logger.error('Cuckoo file submission failed', { error: error.message, filename });
-      throw new Error(`Cuckoo file submission failed: ${error.message}`);
+      logger.error(`Cuckoo file submission failed: ${error.message}`);
+      throw new Error(`Failed to submit file to Cuckoo: ${error.message}`);
     }
   }
-  
-  async submitURL(url: string, options?: SandboxSubmitOptions): Promise<string> {
-    try {
-      const params: any = { url };
-      if (options?.timeout) {
-        params.timeout = options.timeout;
-      }
-      
-      const response = await this.client.post('/tasks/create/url', params);
-      return response.data.task_id.toString();
-    } catch (error: any) {
-      logger.error('Cuckoo URL submission failed', { error: error.message, url });
-      throw new Error(`Cuckoo URL submission failed: ${error.message}`);
+
+  /**
+   * Get task status
+   */
+  async getTaskStatus(taskId: number): Promise<{
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    target: string;
+  }> {
+    if (!this.enabled) {
+      throw new Error('Cuckoo Sandbox is not configured');
     }
-  }
-  
-  async getStatus(jobId: string): Promise<SandboxResult> {
+
     try {
-      const response = await this.client.get(`/tasks/view/${jobId}`);
+      const response = await this.client.get(`/tasks/view/${taskId}`);
       const task = response.data.task;
-      
+
+      let status: 'pending' | 'running' | 'completed' | 'failed';
+      switch (task.status) {
+        case 'pending':
+          status = 'pending';
+          break;
+        case 'running':
+          status = 'running';
+          break;
+        case 'completed':
+        case 'reported':
+          status = 'completed';
+          break;
+        case 'failed_analysis':
+        case 'failed_processing':
+        case 'failed_reporting':
+          status = 'failed';
+          break;
+        default:
+          status = 'pending';
+      }
+
       return {
-        jobId,
-        status: this.mapStatus(task.status),
-        analysisId: task.id?.toString(),
+        status,
+        target: task.target
       };
     } catch (error: any) {
-      logger.error('Cuckoo status check failed', { error: error.message, jobId });
-      throw new Error(`Cuckoo status check failed: ${error.message}`);
+      logger.error(`Failed to get Cuckoo task status: ${error.message}`);
+      throw error;
     }
   }
-  
-  async getResults(analysisId: string): Promise<SandboxResult> {
+
+  /**
+   * Get full analysis report
+   */
+  async getReport(taskId: number): Promise<CuckooAnalysisResult> {
+    if (!this.enabled) {
+      throw new Error('Cuckoo Sandbox is not configured');
+    }
+
     try {
-      const report = await this.client.get(`/tasks/report/${analysisId}/json`);
-      const data = report.data;
+      const response = await this.client.get(`/tasks/report/${taskId}`);
+      const report = response.data;
+
+      // Calculate verdict based on score and signatures
+      let verdict: 'malicious' | 'suspicious' | 'clean' | 'unknown' = 'unknown';
+      const score = report.info?.score || 0;
       
+      if (score >= 7) verdict = 'malicious';
+      else if (score >= 4) verdict = 'suspicious';
+      else if (score < 4) verdict = 'clean';
+
+      // Extract malware family from signatures
+      const malwareFamily = report.malfamily || 
+        report.signatures?.find((sig: any) => sig.name.includes('family'))?.name;
+
+      // Extract MITRE ATT&CK techniques
+      const mitre = [];
+      if (report.signatures) {
+        for (const sig of report.signatures) {
+          if (sig.mitre_attack) {
+            mitre.push({
+              id: sig.mitre_attack.id,
+              tactic: sig.mitre_attack.tactic,
+              technique: sig.mitre_attack.technique,
+              description: sig.description
+            });
+          }
+        }
+      }
+
       return {
-        jobId: analysisId,
+        taskId,
         status: 'completed',
-        analysisId,
-        results: {
-          network: this.extractNetworkActivity(data.network),
-          filesystem: this.extractFileSystemActivity(data.target?.file, data.behavior?.summary?.files),
-          processes: this.extractProcessActivity(data.behavior?.processes),
-          screenshots: data.screenshots?.map((s: any) => s.path || s),
-          signatures: data.signatures?.map((s: any) => s.name || s),
-          score: data.info?.score || 0
+        verdict,
+        score,
+        malwareFamily,
+        tags: report.info?.tags || [],
+        signatures: (report.signatures || []).map((sig: any) => ({
+          name: sig.name,
+          description: sig.description,
+          severity: sig.severity,
+          marks: sig.marks?.length || 0
+        })),
+        network: {
+          hosts: report.network?.hosts || [],
+          domains: report.network?.domains || [],
+          http: report.network?.http || [],
+          dns: report.network?.dns || [],
+          tcp: report.network?.tcp || [],
+          udp: report.network?.udp || []
+        },
+        processes: report.behavior?.processes || [],
+        files: (report.dropped || []).map((file: any) => ({
+          name: file.name,
+          path: file.path,
+          md5: file.md5,
+          sha1: file.sha1,
+          sha256: file.sha256,
+          type: file.type
+        })),
+        registry: report.behavior?.summary?.keys || [],
+        dropped: report.dropped || [],
+        screenshots: (report.screenshots || []).map((s: any) => s.path),
+        mitre
+      };
+    } catch (error: any) {
+      logger.error(`Failed to get Cuckoo report: ${error.message}`);
+      throw new Error(`Failed to get report from Cuckoo: ${error.message}`);
+    }
+  }
+
+  /**
+   * Wait for analysis to complete with polling
+   */
+  async waitForAnalysis(
+    taskId: number,
+    maxWaitTime: number = 300000, // 5 minutes
+    pollInterval: number = 10000   // 10 seconds
+  ): Promise<CuckooAnalysisResult> {
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxWaitTime) {
+      const status = await this.getTaskStatus(taskId);
+
+      if (status.status === 'completed') {
+        return await this.getReport(taskId);
+      }
+
+      if (status.status === 'failed') {
+        throw new Error(`Analysis failed for task ${taskId}`);
+      }
+
+      logger.debug(`Cuckoo task ${taskId} still ${status.status}, waiting...`);
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+
+    throw new Error(`Analysis timeout after ${maxWaitTime}ms`);
+  }
+
+  /**
+   * Delete task and its data
+   */
+  async deleteTask(taskId: number): Promise<boolean> {
+    if (!this.enabled) {
+      throw new Error('Cuckoo Sandbox is not configured');
+    }
+
+    try {
+      await this.client.get(`/tasks/delete/${taskId}`);
+      logger.info(`Deleted Cuckoo task: ${taskId}`);
+      return true;
+    } catch (error: any) {
+      logger.error(`Failed to delete Cuckoo task: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Get Cuckoo status and stats
+   */
+  async getStatus(): Promise<{
+    version: string;
+    tasks: {
+      total: number;
+      pending: number;
+      running: number;
+      completed: number;
+      failed: number;
+    };
+  }> {
+    if (!this.enabled) {
+      throw new Error('Cuckoo Sandbox is not configured');
+    }
+
+    try {
+      const statusResponse = await this.client.get('/cuckoo/status');
+      const tasksResponse = await this.client.get('/tasks/list');
+
+      const tasks = tasksResponse.data.tasks || [];
+
+      return {
+        version: statusResponse.data.version,
+        tasks: {
+          total: tasks.length,
+          pending: tasks.filter((t: any) => t.status === 'pending').length,
+          running: tasks.filter((t: any) => t.status === 'running').length,
+          completed: tasks.filter((t: any) => t.status === 'reported').length,
+          failed: tasks.filter((t: any) => t.status.includes('failed')).length
         }
       };
     } catch (error: any) {
-      logger.error('Cuckoo results fetch failed', { error: error.message, analysisId });
-      throw new Error(`Cuckoo results fetch failed: ${error.message}`);
+      logger.error(`Failed to get Cuckoo status: ${error.message}`);
+      throw error;
     }
   }
-  
-  private mapStatus(status: string): 'pending' | 'running' | 'completed' | 'failed' {
-    const mapping: Record<string, 'pending' | 'running' | 'completed' | 'failed'> = {
-      'pending': 'pending',
-      'running': 'running',
-      'completed': 'completed',
-      'reported': 'completed',
-      'failed': 'failed'
-    };
-    return mapping[status] || 'pending';
-  }
-  
-  private extractNetworkActivity(network: any): NetworkActivity[] {
-    if (!network) return [];
-    
-    const activities: NetworkActivity[] = [];
-    
-    // Handle different Cuckoo network formats
-    if (Array.isArray(network)) {
-      network.forEach((item: any) => {
-        activities.push({
-          protocol: item.protocol || item.proto || 'tcp',
-          destination: item.dst || item.destination || '',
-          port: item.dport || item.port || 0,
-          method: item.method,
-          path: item.uri || item.path,
-          statusCode: item.status_code || item.statusCode
-        });
-      });
-    } else if (network.tcp || network.udp || network.http) {
-      // Handle structured network data
-      if (network.tcp) {
-        network.tcp.forEach((item: any) => {
-          activities.push({
-            protocol: 'tcp',
-            destination: item.dst || '',
-            port: item.dport || 0,
-          });
-        });
-      }
-      if (network.udp) {
-        network.udp.forEach((item: any) => {
-          activities.push({
-            protocol: 'udp',
-            destination: item.dst || '',
-            port: item.dport || 0,
-          });
-        });
-      }
-      if (network.http) {
-        network.http.forEach((item: any) => {
-          activities.push({
-            protocol: 'http',
-            destination: item.host || '',
-            port: item.port || 80,
-            method: item.method,
-            path: item.uri || item.path,
-            statusCode: item.status
-          });
-        });
-      }
+
+  /**
+   * Search for tasks by target
+   */
+  async searchTasks(target: string): Promise<number[]> {
+    if (!this.enabled) {
+      throw new Error('Cuckoo Sandbox is not configured');
     }
-    
-    return activities;
-  }
-  
-  private extractFileSystemActivity(file: any, filesSummary?: any): FileSystemActivity[] {
-    const activities: FileSystemActivity[] = [];
-    
-    if (file) {
-      activities.push({
-        action: 'created',
-        path: file.path || file.name || '',
-        fileType: file.type || file.mime || ''
-      });
+
+    try {
+      const response = await this.client.get('/tasks/list');
+      const tasks = response.data.tasks || [];
+
+      return tasks
+        .filter((t: any) => t.target.includes(target))
+        .map((t: any) => t.id);
+    } catch (error: any) {
+      logger.error(`Failed to search Cuckoo tasks: ${error.message}`);
+      return [];
     }
-    
-    if (filesSummary) {
-      Object.keys(filesSummary).forEach((path: string) => {
-        const actions = filesSummary[path];
-        if (actions.read) {
-          activities.push({ action: 'read', path });
-        }
-        if (actions.write || actions.created) {
-          activities.push({ action: 'created', path });
-        }
-        if (actions.deleted) {
-          activities.push({ action: 'deleted', path });
-        }
-      });
-    }
-    
-    return activities;
-  }
-  
-  private extractProcessActivity(processes: any[]): ProcessActivity[] {
-    if (!processes || !Array.isArray(processes)) return [];
-    
-    return processes.map((proc: any) => ({
-      name: proc.process_name || proc.name || '',
-      pid: proc.pid || 0,
-      commandLine: proc.command_line || proc.cmdline || '',
-      parentPid: proc.parent_id || proc.ppid
-    }));
   }
 }

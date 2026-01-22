@@ -18,6 +18,18 @@ export const serviceConfigs: Record<string, ServiceConfig> = {
     timeout: 30000,
     retries: 3
   },
+  'sandbox-service': {
+    name: 'sandbox-service',
+    url: process.env.SANDBOX_SERVICE_URL || 'http://sandbox-service:3004',
+    timeout: 60000,
+    retries: 2
+  },
+  'extension-api': {
+    name: 'extension-api',
+    url: process.env.EXTENSION_API_URL || 'http://extension-api:3003',
+    timeout: 30000,
+    retries: 3
+  },
   'nlp-service': {
     name: 'nlp-service',
     url: process.env.NLP_SERVICE_URL || 'http://nlp-service:8000',
@@ -42,7 +54,11 @@ export const routeConfig = {
   '/api/v1/detect': 'detection-api',
   '/api/v1/intelligence': 'threat-intel',
   '/api/v1/dashboard': 'detection-api',
-  '/api/v1/iocs': 'threat-intel',
+  '/api/v1/ioc': 'threat-intel',
+  '/api/v1/feeds': 'threat-intel',
+  '/api/v1/sync': 'threat-intel',
+  '/api/v1/sandbox': 'sandbox-service',
+  '/api/v1/extension': 'extension-api',
   '/api/v1/nlp': 'nlp-service',
   '/api/v1/url': 'url-service',
   '/api/v1/visual': 'visual-service'

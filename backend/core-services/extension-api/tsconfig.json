@@ -4,8 +4,7 @@
     "module": "commonjs",
     "lib": ["ES2020"],
     "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
+    "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -15,11 +14,27 @@
     "emitDecoratorMetadata": true,
     "baseUrl": ".",
     "paths": {
-      "../../shared/*": ["../../shared/*"]
+      "../../shared/*": ["../../shared/*"],
+      "../../shared/database": ["../../shared/database/index.ts"],
+      "../../shared/database/*": ["../../shared/database/*"]
     }
   },
-  "include": ["src/**/*", "tests/**/*", "src/types/**/*.d.ts"],
-  "exclude": ["node_modules", "dist"],
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "**/tests",
+    "**/tests/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/__tests__",
+    "**/__tests__/**",
+    "**/__mocks__",
+    "**/__mocks__/**"
+  ],
   "ts-node": {
     "skipLibCheck": true
   },

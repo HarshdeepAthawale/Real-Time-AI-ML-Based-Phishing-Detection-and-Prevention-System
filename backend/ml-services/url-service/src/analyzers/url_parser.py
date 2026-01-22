@@ -1,15 +1,27 @@
+"""URL parsing and normalization"""
 from urllib.parse import urlparse, parse_qs, unquote
-from typing import Dict, List, Optional
+from typing import Dict
 import tldextract
 import hashlib
 import re
 
+
 class URLParser:
+    """Parse and normalize URLs"""
+    
     def __init__(self):
         self.extractor = tldextract.TLDExtract(cache_dir=False)
     
     def parse(self, url: str) -> Dict:
-        """Parse URL into components"""
+        """
+        Parse URL into components
+        
+        Args:
+            url: URL to parse
+            
+        Returns:
+            Dictionary with URL components
+        """
         try:
             parsed = urlparse(url)
             extracted = self.extractor(url)
@@ -37,10 +49,15 @@ class URLParser:
                 "query_params": {k: v[0] if len(v) == 1 else v for k, v in query_params.items()},
                 "fragment": parsed.fragment,
                 "port": parsed.port,
-                "netloc": parsed.netloc
+                "netloc": parsed.netloc,
+                "full_domain": extracted.fqdn
             }
+        
         except Exception as e:
-            raise ValueError(f"Failed to parse URL: {e}")
+            return {
+                "original_url": url,
+                "error": str(e)
+            }
     
     def _normalize(self, url: str) -> str:
         """Normalize URL for consistent hashing"""
@@ -60,7 +77,7 @@ class URLParser:
         
         return url
     
-    def extract_urls_from_text(self, text: str) -> List[str]:
+    def extract_urls_from_text(self, text: str) -> list:
         """Extract URLs from text"""
         url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
         return re.findall(url_pattern, text)

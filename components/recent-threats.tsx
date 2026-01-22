@@ -1,58 +1,39 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import { AlertTriangle, CheckCircle2, Clock, Shield } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-
-interface Threat {
-  id: string
-  type: string
-  target: string
-  severity: 'critical' | 'high' | 'medium'
-  status: 'blocked' | 'monitored' | 'resolved'
-  timestamp: string
-}
+import { getRecentThreats } from '@/lib/api/dashboard'
+import { Threat } from '@/lib/types/api'
+import { ThreatRowSkeleton } from '@/components/ui/loading'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ErrorBoundary } from '@/components/error-boundary'
 
 export default function RecentThreats() {
-  const threats: Threat[] = [
-    {
-      id: '1',
-      type: 'Email Phishing',
-      target: 'enterprise@company.com',
-      severity: 'critical',
-      status: 'blocked',
-      timestamp: '2 minutes ago',
-    },
-    {
-      id: '2',
-      type: 'URL Spoofing',
-      target: 'attacker-bank-clone.io',
-      severity: 'high',
-      status: 'monitored',
-      timestamp: '15 minutes ago',
-    },
-    {
-      id: '3',
-      type: 'Domain Hijacking',
-      target: 'secure-mail-service.co',
-      severity: 'high',
-      status: 'blocked',
-      timestamp: '1 hour ago',
-    },
-    {
-      id: '4',
-      type: 'AI-Generated Content',
-      target: 'noreply@trusted-source.fake',
-      severity: 'medium',
-      status: 'resolved',
-      timestamp: '3 hours ago',
-    },
-    {
-      id: '5',
-      type: 'Credential Harvesting',
-      target: 'login-verify.malicious.net',
-      severity: 'critical',
-      status: 'blocked',
-      timestamp: '5 hours ago',
-    },
-  ]
+  const [threats, setThreats] = useState<Threat[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchThreats = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const data = await getRecentThreats(10, 0)
+      setThreats(data)
+    } catch (err: any) {
+      setError(err.message || 'Failed to load threats')
+      console.error('Error fetching threats:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchThreats()
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(fetchThreats, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -81,8 +62,14 @@ export default function RecentThreats() {
   }
 
   return (
-    <div className="bg-card rounded-lg border border-border p-6">
+    <ErrorBoundary>
+      <div className="bg-card rounded-lg border border-border p-6">
       <h3 className="text-lg font-semibold text-foreground mb-4">Recent Threats</h3>
+      {error && (
+        <Alert className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -105,7 +92,18 @@ export default function RecentThreats() {
             </tr>
           </thead>
           <tbody>
-            {threats.map((threat) => (
+            {loading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <ThreatRowSkeleton key={i} />
+              ))
+            ) : threats.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  No threats detected yet
+                </td>
+              </tr>
+            ) : (
+              threats.map((threat) => (
               <tr
                 key={threat.id}
                 className="border-b border-border hover:bg-muted/50 transition-colors"
@@ -128,10 +126,12 @@ export default function RecentThreats() {
                 </td>
                 <td className="px-4 py-4 text-sm text-muted-foreground">{threat.timestamp}</td>
               </tr>
-            ))}
+              ))
+            )}
           </tbody>
         </table>
       </div>
     </div>
+    </ErrorBoundary>
   )
 }

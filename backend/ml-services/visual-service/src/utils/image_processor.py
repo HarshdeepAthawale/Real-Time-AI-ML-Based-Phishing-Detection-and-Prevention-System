@@ -1,72 +1,49 @@
+"""Image processing utilities"""
 from PIL import Image
 import io
-import numpy as np
-from typing import Dict, Tuple, Optional
+from typing import Tuple
 
-class ImageProcessor:
-    """Utility class for image processing operations"""
+
+def resize_image(image_bytes: bytes, max_size: Tuple[int, int] = (1920, 1080)) -> bytes:
+    """
+    Resize image while maintaining aspect ratio
     
-    @staticmethod
-    def resize_image(image_bytes: bytes, size: Tuple[int, int] = (224, 224)) -> bytes:
-        """Resize image to specified dimensions"""
-        image = Image.open(io.BytesIO(image_bytes))
-        image = image.resize(size, Image.Resampling.LANCZOS)
+    Args:
+        image_bytes: Original image bytes
+        max_size: Maximum dimensions (width, height)
         
-        buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
-        return buffer.getvalue()
-    
-    @staticmethod
-    def convert_to_rgb(image_bytes: bytes) -> bytes:
-        """Convert image to RGB format"""
+    Returns:
+        Resized image bytes
+    """
+    try:
         image = Image.open(io.BytesIO(image_bytes))
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        image.thumbnail(max_size, Image.Resampling.LANCZOS)
         
-        buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
-        return buffer.getvalue()
+        output = io.BytesIO()
+        image.save(output, format='PNG')
+        return output.getvalue()
     
-    @staticmethod
-    def get_image_info(image_bytes: bytes) -> Dict:
-        """Get image metadata"""
-        image = Image.open(io.BytesIO(image_bytes))
+    except Exception as e:
+        raise ValueError(f"Error resizing image: {e}")
+
+
+def convert_to_jpeg(image_bytes: bytes, quality: int = 80) -> bytes:
+    """
+    Convert image to JPEG format
+    
+    Args:
+        image_bytes: Original image bytes
+        quality: JPEG quality (1-100)
         
-        return {
-            "width": image.width,
-            "height": image.height,
-            "format": image.format,
-            "mode": image.mode,
-            "size_bytes": len(image_bytes)
-        }
-    
-    @staticmethod
-    def normalize_image(image_bytes: bytes) -> np.ndarray:
-        """Normalize image for ML model input"""
+    Returns:
+        JPEG image bytes
+    """
+    try:
         image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-        image_array = np.array(image)
         
-        # Normalize to [0, 1]
-        normalized = image_array.astype(np.float32) / 255.0
-        
-        return normalized
+        output = io.BytesIO()
+        image.save(output, format='JPEG', quality=quality)
+        return output.getvalue()
     
-    @staticmethod
-    def extract_thumbnail(image_bytes: bytes, size: Tuple[int, int] = (128, 128)) -> bytes:
-        """Extract thumbnail from image"""
-        image = Image.open(io.BytesIO(image_bytes))
-        image.thumbnail(size, Image.Resampling.LANCZOS)
-        
-        buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
-        return buffer.getvalue()
-    
-    @staticmethod
-    def crop_image(image_bytes: bytes, box: Tuple[int, int, int, int]) -> bytes:
-        """Crop image to specified box (left, top, right, bottom)"""
-        image = Image.open(io.BytesIO(image_bytes))
-        cropped = image.crop(box)
-        
-        buffer = io.BytesIO()
-        cropped.save(buffer, format='PNG')
-        return buffer.getvalue()
+    except Exception as e:
+        raise ValueError(f"Error converting to JPEG: {e}")

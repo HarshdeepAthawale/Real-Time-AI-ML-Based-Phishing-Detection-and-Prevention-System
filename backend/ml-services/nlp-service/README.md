@@ -1,194 +1,119 @@
 # NLP Text Analysis Service
 
-A FastAPI-based service for phishing detection using transformer models (BERT/RoBERTa) for semantic analysis of email/SMS content, AI-generated content detection, and social engineering indicator identification.
+AI/ML-based phishing detection using transformer models (BERT/RoBERTa).
 
 ## Features
 
-- **Phishing Detection**: Uses fine-tuned BERT/RoBERTa models to detect phishing attempts
-- **AI Content Detection**: Identifies AI-generated content
-- **Urgency Analysis**: Detects urgency indicators and time-sensitive language
-- **Sentiment Analysis**: Analyzes sentiment of text content
-- **Social Engineering Detection**: Identifies social engineering tactics
-- **Email Parsing**: Parses and analyzes email content
-- **Feature Extraction**: Extracts linguistic and semantic features
+- **Phishing Detection**: Fine-tuned transformer models for semantic analysis
+- **AI Content Detection**: Identify AI-generated phishing attempts
+- **Urgency Analysis**: Detect time-pressure tactics
+- **Sentiment Analysis**: Identify fear-based social engineering
+- **Social Engineering Detection**: Recognize manipulation tactics
+- **Email Parsing**: Extract and analyze email headers and body
 
-## Architecture
+## API Endpoints
 
-```
-┌─────────────────────────────────────────────────────────┐
-│              NLP Service (FastAPI)                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │   Text       │  │   Model      │  │   Feature    │ │
-│  │ Preprocessor │→ │   Inference  │→ │  Extractor   │ │
-│  └──────────────┘  └──────────────┘  └──────────────┘ │
-│                                                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │   AI Content │  │   Urgency    │  │   Sentiment  │ │
-│  │   Detector   │  │   Analyzer   │  │   Analyzer   │ │
-│  └──────────────┘  └──────────────┘  └──────────────┘ │
-└─────────────────────────────────────────────────────────┘
+### POST `/api/v1/analyze-text`
+Analyze plain text for phishing indicators.
+
+**Request**:
+```json
+{
+  "text": "Urgent! Your account will be suspended...",
+  "include_features": false
+}
 ```
 
-## Project Structure
+**Response**:
+```json
+{
+  "phishing_probability": 0.87,
+  "legitimate_probability": 0.13,
+  "confidence": 0.74,
+  "prediction": "phishing",
+  "urgency_score": 75,
+  "sentiment": "NEGATIVE",
+  "social_engineering_score": 68,
+  "processing_time_ms": 45.2,
+  "cached": false
+}
+```
 
+### POST `/api/v1/analyze-email`
+Analyze email content for phishing.
+
+**Request**:
+```json
+{
+  "subject": "Verify your account",
+  "body": "Click here to verify...",
+  "sender": "noreply@suspicious.com",
+  "include_features": false
+}
 ```
-nlp-service/
-├── src/
-│   ├── main.py                    # FastAPI application
-│   ├── models/
-│   │   ├── phishing_classifier.py # Main phishing detection model
-│   │   ├── ai_detector.py         # AI-generated content detector
-│   │   └── feature_extractor.py   # Feature extraction utilities
-│   ├── preprocessing/
-│   │   ├── text_normalizer.py     # Text normalization
-│   │   ├── tokenizer.py           # Custom tokenization
-│   │   └── email_parser.py         # Email-specific parsing
-│   ├── analyzers/
-│   │   ├── urgency_analyzer.py    # Urgency detection
-│   │   ├── sentiment_analyzer.py  # Sentiment analysis
-│   │   └── social_engineering.py  # Social engineering indicators
-│   ├── api/
-│   │   ├── routes.py              # API route handlers
-│   │   └── schemas.py             # Pydantic models
-│   └── utils/
-│       ├── model_loader.py        # Model loading utilities
-│       └── cache.py              # Redis caching
-├── models/                        # Pre-trained model files
-├── training/                      # Training scripts
-├── tests/                         # Test files
-├── Dockerfile
-├── requirements.txt
-└── README.md
-```
+
+### POST `/api/v1/detect-ai-content`
+Check if content is AI-generated.
+
+### GET `/health`
+Health check endpoint.
+
+### GET `/models/info`
+Get information about loaded models.
 
 ## Installation
 
-1. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Download NLTK data:
+## Running Locally
+
 ```bash
-python -m nltk.downloader punkt stopwords
+# Set environment variables
+export MODEL_DIR=/app/models
+export REDIS_URL=redis://localhost:6379
+
+# Run service
+uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-3. Set environment variables (create `.env` file):
-```env
-MODEL_DIR=./models
-DEVICE=cpu
-REDIS_URL=redis://localhost:6379
-LOG_LEVEL=INFO
-PORT=8000
-CORS_ORIGINS=http://localhost:3000
-```
+## Docker
 
-## Running the Service
-
-### Development
-```bash
-python -m src.main
-```
-
-### Production
-```bash
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2
-```
-
-### Docker
 ```bash
 docker build -t nlp-service .
-docker run -p 8000:8000 nlp-service
+docker run -p 8000:8000 \
+  -e MODEL_DIR=/app/models \
+  -e REDIS_URL=redis://redis:6379 \
+  nlp-service
 ```
 
-## API Endpoints
+## Model Placement
 
-### Health Check
+Place your trained models in:
 ```
-GET /health
+models/
+├── phishing-detector/
+│   ├── pytorch_model.bin
+│   ├── config.json
+│   ├── tokenizer.json
+│   └── vocab.txt
+└── ai-detector/
+    ├── pytorch_model.bin
+    └── config.json
 ```
-
-### Analyze Text
-```
-POST /api/v1/analyze-text
-Body: {
-    "text": "Your text here",
-    "include_features": false
-}
-```
-
-### Analyze Email
-```
-POST /api/v1/analyze-email
-Body: {
-    "raw_email": "Raw email string",
-    "include_features": false
-}
-```
-
-### Detect AI Content
-```
-POST /api/v1/detect-ai-content?text=Your text here
-```
-
-## Response Format
-
-```json
-{
-    "phishing_probability": 0.85,
-    "legitimate_probability": 0.15,
-    "confidence": 0.70,
-    "prediction": "phishing",
-    "ai_generated_probability": 0.30,
-    "urgency_score": 75.0,
-    "sentiment": "NEGATIVE",
-    "social_engineering_score": 65.0,
-    "features": {...},
-    "processing_time_ms": 45.2
-}
-```
-
-## Model Training
-
-To train custom models, use the scripts in the `training/` directory:
-
-```bash
-python training/train_phishing_model.py
-python training/train_ai_detector.py
-```
-
-## Testing
-
-Run tests with pytest:
-```bash
-pytest tests/
-```
-
-## Performance Targets
-
-- Inference latency: <50ms per request (on CPU)
-- Throughput: 100+ requests/second
-- Model loading time: <30 seconds
-- Memory usage: <2GB per worker
 
 ## Configuration
 
-The service uses environment variables for configuration:
+Environment variables:
+- `MODEL_DIR`: Directory containing model files (default: `/app/models`)
+- `REDIS_URL`: Redis connection URL
+- `MONGODB_URL`: MongoDB connection URL
+- `INFERENCE_DEVICE`: `cpu` or `cuda` (default: `cpu`)
+- `LOG_LEVEL`: Logging level (default: `info`)
 
-- `MODEL_DIR`: Directory containing model files (default: `./models`)
-- `DEVICE`: Device to run models on (`cpu` or `cuda`) (default: `cpu`)
-- `REDIS_URL`: Redis connection URL for caching
-- `LOG_LEVEL`: Logging level (default: `INFO`)
-- `PORT`: Service port (default: `8000`)
-- `CORS_ORIGINS`: Comma-separated list of allowed CORS origins
+## Performance
 
-## Notes
-
-- The service includes fallback methods when models are not available
-- Models are loaded at startup and cached in memory
-- Redis caching is optional but recommended for production
-- The service is designed to work with CPU inference, but GPU support is available
-
-## License
-
-Part of the Real-Time AI/ML-Based Phishing Detection and Prevention System.
+- **Inference Latency**: <50ms per request (CPU)
+- **Throughput**: 100+ requests/second
+- **Cache Hit Rate**: >70% for repeated content

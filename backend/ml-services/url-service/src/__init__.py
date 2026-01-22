@@ -1,1 +1,1 @@
-"""URL Service - Phishing Detection using Graph Neural Networks"""
+"""URL/Domain Analysis Service"""

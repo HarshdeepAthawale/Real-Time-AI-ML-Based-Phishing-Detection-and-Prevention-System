@@ -1,31 +1,55 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import { Database, Globe, LinkIcon, AlertTriangle } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import { getMaliciousDomains, getThreatPatterns, getIOCs, getThreatIntelligenceSummary } from '@/lib/api/threat-intel'
+import { MaliciousDomain, ThreatPattern, IOC, ThreatIntelligenceSummary } from '@/lib/types/api'
+import { TableSkeleton, Spinner } from '@/components/ui/loading'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ErrorBoundary } from '@/components/error-boundary'
 
 export default function ThreatIntelligence() {
-  const maliciousDomains = [
-    { domain: 'attacker-bank-clone.io', reputation: 'Malicious', reports: 342 },
-    { domain: 'verify-account-now.fake', reputation: 'Malicious', reports: 156 },
-    { domain: 'secure-login-service.co', reputation: 'Suspicious', reports: 89 },
-    { domain: 'update-credentials-here.net', reputation: 'Malicious', reports: 267 },
-  ]
+  const [maliciousDomains, setMaliciousDomains] = useState<MaliciousDomain[]>([])
+  const [threatPatterns, setThreatPatterns] = useState<ThreatPattern[]>([])
+  const [ioCs, setIOCs] = useState<IOC[]>([])
+  const [summary, setSummary] = useState<ThreatIntelligenceSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const threatPatterns = [
-    { pattern: 'WHOIS spoofing with lookalike registrars', incidents: 1240 },
-    { pattern: 'Homoglyph domain attacks (0/O, 1/l)', incidents: 856 },
-    { pattern: 'SSL certificate misuse (free providers)', incidents: 623 },
-    { pattern: 'URL parameter cloaking with redirects', incidents: 445 },
-  ]
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const [domains, patterns, iocs, summaryData] = await Promise.all([
+          getMaliciousDomains(50, 0),
+          getThreatPatterns(20),
+          getIOCs(50, 0),
+          getThreatIntelligenceSummary(),
+        ])
+        setMaliciousDomains(domains)
+        setThreatPatterns(patterns)
+        setIOCs(iocs)
+        setSummary(summaryData)
+      } catch (err: any) {
+        setError(err.message || 'Failed to load threat intelligence data')
+        console.error('Error fetching threat intelligence:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
 
-  const ioCs = [
-    { value: '192.168.1.100', type: 'IP Address', sources: 45 },
-    { value: 'hash:a1b2c3d4e5f6', type: 'File Hash', sources: 12 },
-    { value: 'C2-command.malware.net', type: 'Domain', sources: 67 },
-    { value: 'payload_dropper_v3.exe', type: 'Filename', sources: 23 },
-  ]
+    fetchData()
+    // Refresh every 5 minutes
+    const interval = setInterval(fetchData, 300000)
+    return () => clearInterval(interval)
+  }, [])
 
   return (
-    <div className="p-6 space-y-6">
+    <ErrorBoundary>
+      <div className="p-6 space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground">Threat Intelligence</h1>
@@ -53,8 +77,13 @@ export default function ThreatIntelligence() {
         <TabsContent value="domains" className="space-y-4">
           <div className="bg-card rounded-lg border border-border p-6">
             <h3 className="text-lg font-semibold text-foreground mb-4">Recently Identified Domains</h3>
-            <div className="space-y-3">
-              {maliciousDomains.map((item) => (
+            {loading ? (
+              <TableSkeleton rows={4} />
+            ) : maliciousDomains.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No malicious domains found</p>
+            ) : (
+              <div className="space-y-3">
+                {maliciousDomains.map((item) => (
                 <div key={item.domain} className="p-4 bg-muted/50 rounded-lg border border-border">
                   <div className="flex items-center justify-between mb-2">
                     <code className="text-sm font-mono text-foreground">{item.domain}</code>
@@ -71,8 +100,9 @@ export default function ThreatIntelligence() {
                   </div>
                   <p className="text-xs text-muted-foreground">{item.reports} reports from threat feeds</p>
                 </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -80,8 +110,13 @@ export default function ThreatIntelligence() {
         <TabsContent value="patterns" className="space-y-4">
           <div className="bg-card rounded-lg border border-border p-6">
             <h3 className="text-lg font-semibold text-foreground mb-4">Common Attack Patterns</h3>
-            <div className="space-y-3">
-              {threatPatterns.map((pattern) => (
+            {loading ? (
+              <TableSkeleton rows={4} />
+            ) : threatPatterns.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No threat patterns found</p>
+            ) : (
+              <div className="space-y-3">
+                {threatPatterns.map((pattern) => (
                 <div
                   key={pattern.pattern}
                   className="p-4 bg-muted/50 rounded-lg border border-border hover:border-primary/50 transition-colors"
@@ -101,8 +136,9 @@ export default function ThreatIntelligence() {
                     />
                   </div>
                 </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -127,7 +163,23 @@ export default function ThreatIntelligence() {
                 </tr>
               </thead>
               <tbody>
-                {ioCs.map((ioc) => (
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i} className="border-b border-border">
+                      <td className="px-6 py-4"><div className="h-4 w-32 bg-muted animate-pulse rounded" /></td>
+                      <td className="px-6 py-4"><div className="h-6 w-20 bg-muted animate-pulse rounded" /></td>
+                      <td className="px-6 py-4"><div className="h-4 w-16 bg-muted animate-pulse rounded" /></td>
+                      <td className="px-6 py-4"><div className="h-4 w-12 bg-muted animate-pulse rounded" /></td>
+                    </tr>
+                  ))
+                ) : ioCs.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-8 text-center text-sm text-muted-foreground">
+                      No IOCs found
+                    </td>
+                  </tr>
+                ) : (
+                  ioCs.map((ioc) => (
                   <tr key={ioc.value} className="border-b border-border hover:bg-muted/50 transition-colors">
                     <td className="px-6 py-4">
                       <code className="text-sm font-mono text-foreground break-all">{ioc.value}</code>
@@ -141,39 +193,75 @@ export default function ThreatIntelligence() {
                     <td className="px-6 py-4">
                       <button className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
                         Block
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                    </button>
+                  </td>
+                </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </TabsContent>
       </Tabs>
 
+      {error && (
+        <Alert>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       {/* Intelligence Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-card rounded-lg border border-border p-6">
           <h4 className="text-sm font-semibold text-muted-foreground mb-2">Known Threats</h4>
-          <p className="text-3xl font-bold text-foreground">8.4K</p>
-          <p className="text-xs text-muted-foreground mt-2">Active monitoring</p>
+          {loading ? (
+            <Spinner className="my-4" />
+          ) : (
+            <>
+              <p className="text-3xl font-bold text-foreground">
+                {summary ? (summary.knownThreats / 1000).toFixed(1) + 'K' : '0'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">Active monitoring</p>
+            </>
+          )}
         </div>
         <div className="bg-card rounded-lg border border-border p-6">
           <h4 className="text-sm font-semibold text-muted-foreground mb-2">Feed Integrations</h4>
-          <p className="text-3xl font-bold text-foreground">12</p>
-          <p className="text-xs text-muted-foreground mt-2">Real-time updates</p>
+          {loading ? (
+            <Spinner className="my-4" />
+          ) : (
+            <>
+              <p className="text-3xl font-bold text-foreground">{summary?.feedIntegrations || 0}</p>
+              <p className="text-xs text-muted-foreground mt-2">Real-time updates</p>
+            </>
+          )}
         </div>
         <div className="bg-card rounded-lg border border-border p-6">
           <h4 className="text-sm font-semibold text-muted-foreground mb-2">Zero-Day Detection</h4>
-          <p className="text-3xl font-bold text-foreground">97%</p>
-          <p className="text-xs text-muted-foreground mt-2">Success rate</p>
+          {loading ? (
+            <Spinner className="my-4" />
+          ) : (
+            <>
+              <p className="text-3xl font-bold text-foreground">{summary?.zeroDayDetection || 0}%</p>
+              <p className="text-xs text-muted-foreground mt-2">Success rate</p>
+            </>
+          )}
         </div>
         <div className="bg-card rounded-lg border border-border p-6">
           <h4 className="text-sm font-semibold text-muted-foreground mb-2">Last Updated</h4>
-          <p className="text-sm font-semibold text-foreground">2 minutes ago</p>
-          <p className="text-xs text-muted-foreground mt-2">Feeds synchronized</p>
+          {loading ? (
+            <Spinner className="my-4" />
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-foreground">
+                {summary?.lastUpdated ? new Date(summary.lastUpdated).toLocaleTimeString() : 'Never'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">Feeds synchronized</p>
+            </>
+          )}
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   )
 }

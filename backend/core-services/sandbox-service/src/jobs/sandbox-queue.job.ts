@@ -24,7 +24,7 @@ export class SandboxQueueJob {
     
     // Create queue
     this.queue = new Queue(QUEUE_NAMES.SANDBOX_JOBS, {
-      connection: redis,
+      connection: redis as any,
     });
     
     // Create worker
@@ -35,7 +35,7 @@ export class SandboxQueueJob {
         await this.resultProcessor.processResults(analysisId);
       },
       {
-        connection: redis,
+        connection: redis as any,
         concurrency: config.queue.concurrency,
         removeOnComplete: {
           age: 3600, // Keep completed jobs for 1 hour
@@ -49,7 +49,7 @@ export class SandboxQueueJob {
     
     // Create queue events listener
     this.queueEvents = new QueueEvents(QUEUE_NAMES.SANDBOX_JOBS, {
-      connection: redis,
+      connection: redis as any,
     });
     
     this.setupEventHandlers();

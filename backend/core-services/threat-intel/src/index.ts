@@ -17,6 +17,7 @@ import { SyncScheduler } from './jobs/sync-scheduler';
 import iocRoutes from './routes/ioc.routes';
 import feedsRoutes from './routes/feeds.routes';
 import syncRoutes from './routes/sync.routes';
+import intelligenceRoutes from './routes/intelligence.routes';
 
 const app = express();
 
@@ -111,6 +112,7 @@ async function initializeApp(): Promise<void> {
 app.use('/api/v1/ioc', iocRoutes);
 app.use('/api/v1/feeds', feedsRoutes);
 app.use('/api/v1/sync', syncRoutes);
+app.use('/api/v1/intelligence', intelligenceRoutes);
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
@@ -155,6 +157,7 @@ app.get('/', (req, res) => {
       ioc: '/api/v1/ioc',
       feeds: '/api/v1/feeds',
       sync: '/api/v1/sync',
+      intelligence: '/api/v1/intelligence',
     },
   });
 });

@@ -10,35 +10,49 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 describe('CuckooClient', () => {
   let client: CuckooClient;
   const baseURL = 'http://cuckoo-sandbox:8090';
+  let mockAxiosInstance: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    
+    mockAxiosInstance = {
+      post: jest.fn(),
+      get: jest.fn(),
+    };
+
+    mockedAxios.create = jest.fn().mockReturnValue(mockAxiosInstance);
+    
     client = new CuckooClient(baseURL);
   });
 
   describe('submitFile', () => {
     it('should submit file successfully', async () => {
-      const mockPost = jest.fn().mockResolvedValue({
+      mockAxiosInstance.post.mockResolvedValue({
         data: { task_id: 12345 },
       });
 
-      mockedAxios.create = jest.fn().mockReturnValue({
-        post: mockPost,
-      } as any);
+      // Mock FormData
+      const mockFormData = {
+        append: jest.fn(),
+        getHeaders: jest.fn().mockReturnValue({}),
+      };
+      (FormData as any).mockImplementation(() => mockFormData);
 
       const fileBuffer = Buffer.from('test');
       const result = await client.submitFile(fileBuffer, 'test.exe');
 
       expect(result).toBe('12345');
-      expect(mockPost).toHaveBeenCalled();
+      expect(mockAxiosInstance.post).toHaveBeenCalled();
     });
 
     it('should handle submission errors', async () => {
-      const mockPost = jest.fn().mockRejectedValue(new Error('Submission failed'));
+      mockAxiosInstance.post.mockRejectedValue(new Error('Submission failed'));
 
-      mockedAxios.create = jest.fn().mockReturnValue({
-        post: mockPost,
-      } as any);
+      const mockFormData = {
+        append: jest.fn(),
+        getHeaders: jest.fn().mockReturnValue({}),
+      };
+      (FormData as any).mockImplementation(() => mockFormData);
 
       await expect(
         client.submitFile(Buffer.from('test'), 'test.exe')
@@ -48,24 +62,20 @@ describe('CuckooClient', () => {
 
   describe('submitURL', () => {
     it('should submit URL successfully', async () => {
-      const mockPost = jest.fn().mockResolvedValue({
+      mockAxiosInstance.post.mockResolvedValue({
         data: { task_id: 67890 },
       });
-
-      mockedAxios.create = jest.fn().mockReturnValue({
-        post: mockPost,
-      } as any);
 
       const result = await client.submitURL('http://example.com');
 
       expect(result).toBe('67890');
-      expect(mockPost).toHaveBeenCalledWith('/tasks/create/url', { url: 'http://example.com' });
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/tasks/create/url', { url: 'http://example.com' });
     });
   });
 
   describe('getStatus', () => {
     it('should get status successfully', async () => {
-      const mockGet = jest.fn().mockResolvedValue({
+      mockAxiosInstance.get.mockResolvedValue({
         data: {
           task: {
             id: 12345,
@@ -73,10 +83,6 @@ describe('CuckooClient', () => {
           },
         },
       });
-
-      mockedAxios.create = jest.fn().mockReturnValue({
-        get: mockGet,
-      } as any);
 
       const result = await client.getStatus('12345');
 
@@ -88,7 +94,7 @@ describe('CuckooClient', () => {
       const statuses = ['pending', 'running', 'completed', 'reported', 'failed'];
       
       for (const status of statuses) {
-        const mockGet = jest.fn().mockResolvedValue({
+        mockAxiosInstance.get.mockResolvedValue({
           data: {
             task: {
               id: 12345,
@@ -96,10 +102,6 @@ describe('CuckooClient', () => {
             },
           },
         });
-
-        mockedAxios.create = jest.fn().mockReturnValue({
-          get: mockGet,
-        } as any);
 
         const result = await client.getStatus('12345');
         expect(result.status).toBeDefined();
@@ -109,7 +111,7 @@ describe('CuckooClient', () => {
 
   describe('getResults', () => {
     it('should extract results correctly', async () => {
-      const mockGet = jest.fn().mockResolvedValue({
+      mockAxiosInstance.get.mockResolvedValue({
         data: {
           network: [
             {
@@ -141,10 +143,6 @@ describe('CuckooClient', () => {
           },
         },
       });
-
-      mockedAxios.create = jest.fn().mockReturnValue({
-        get: mockGet,
-      } as any);
 
       const result = await client.getResults('12345');
 

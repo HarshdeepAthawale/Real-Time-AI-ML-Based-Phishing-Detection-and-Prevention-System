@@ -1,78 +1,75 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+"""FastAPI application entry point"""
 from contextlib import asynccontextmanager
-import logging
-import os
-from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from src.api.routes import router
-from src.renderer.page_renderer import PageRenderer
+from src.models.model_loader import model_loader
+from src.renderer.page_renderer import page_renderer
+from src.config import settings
+from src.utils.logger import logger
 
-# Load environment variables
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
-
-# Global page renderer
-page_renderer = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
     # Startup
-    global page_renderer
+    logger.info(f"Starting {settings.service_name} v{settings.service_version}")
+    
     try:
-        page_renderer = PageRenderer()
+        # Initialize browser
         await page_renderer.initialize()
-        logger.info("Page renderer initialized successfully")
+        logger.info("Playwright browser initialized")
     except Exception as e:
-        logger.error(f"Failed to initialize page renderer: {e}", exc_info=True)
-        # Continue startup even if renderer fails (will be initialized on first use)
+        logger.warning(f"Could not initialize browser: {e}. Some features may not work.")
+    
+    try:
+        # Load models
+        await model_loader.load_all_models()
+        logger.info("Models loaded successfully")
+    except Exception as e:
+        logger.warning(f"Could not load models: {e}. Service will run without models.")
     
     yield
     
     # Shutdown
-    if page_renderer:
-        await page_renderer.close()
-        logger.info("Page renderer closed")
+    logger.info("Shutting down service...")
+    await page_renderer.close()
+    await model_loader.unload_all_models()
+    logger.info("Service stopped")
+
 
 app = FastAPI(
-    title="Visual Analysis Service",
-    description="Phishing detection using CNN models for visual and structural analysis",
-    version="1.0.0",
+    title="Visual/Structural Analysis Service",
+    description="AI/ML-based visual and structural analysis for phishing detection",
+    version=settings.service_version,
     lifespan=lifespan
 )
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_origins=["*"],  # Configure appropriately for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Include API routes
-app.include_router(router, prefix="/api/v1")
+app.include_router(router, prefix="/api/v1", tags=["Visual Analysis"])
+
 
 @app.get("/")
 async def root():
     """Root endpoint"""
     return {
-        "service": "visual-service",
-        "version": "1.0.0",
+        "service": settings.service_name,
+        "version": settings.service_version,
         "status": "running"
     }
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(
-        "src.main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=os.getenv("DEBUG", "false").lower() == "true"
-    )
+
+@app.get("/health")
+async def health():
+    """Health check endpoint (alias)"""
+    from src.api.routes import health_check
+    return await health_check()

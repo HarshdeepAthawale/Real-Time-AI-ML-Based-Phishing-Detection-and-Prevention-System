@@ -1,1 +1,1 @@
-"""Text preprocessing utilities"""
+"""Text preprocessing modules"""

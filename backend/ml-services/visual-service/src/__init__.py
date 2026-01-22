@@ -1,1 +1,1 @@
-"""Visual Analysis Service for Phishing Detection"""
+"""Visual/Structural Analysis Service"""

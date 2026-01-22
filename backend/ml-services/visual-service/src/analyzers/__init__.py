@@ -1,1 +1,1 @@
-"""DOM and Visual Analysis Components"""
+"""Visual analyzers"""

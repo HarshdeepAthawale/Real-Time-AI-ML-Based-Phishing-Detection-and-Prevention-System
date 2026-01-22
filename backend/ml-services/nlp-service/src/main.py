@@ -1,89 +1,63 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+"""FastAPI application entry point"""
 from contextlib import asynccontextmanager
-import logging
-import os
-from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from src.api.routes import router
-from src.utils.model_loader import ModelLoader
-from src.api.schemas import HealthResponse
+from src.models.model_loader import model_loader
+from src.config import settings
+from src.utils.logger import logger
 
-# Load environment variables
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
-
-# Global model loader
-model_loader = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
     # Startup
-    global model_loader
+    logger.info(f"Starting {settings.service_name} v{settings.service_version}")
     try:
-        model_loader = ModelLoader()
         await model_loader.load_all_models()
-        logger.info("All models loaded successfully")
+        logger.info("Models loaded successfully")
     except Exception as e:
-        logger.error(f"Failed to load models during startup: {e}", exc_info=True)
-        # Continue startup even if models fail to load (they'll use fallback methods)
+        logger.warning(f"Could not load models: {e}. Service will run without models.")
     
     yield
     
     # Shutdown
-    if model_loader:
-        await model_loader.unload_all_models()
-        logger.info("Models unloaded")
+    logger.info("Shutting down service...")
+    await model_loader.unload_all_models()
+    logger.info("Service stopped")
+
 
 app = FastAPI(
-    title="NLP Analysis Service",
-    description="Phishing detection using transformer models",
-    version="1.0.0",
+    title="NLP Text Analysis Service",
+    description="AI/ML-based phishing detection using transformer models",
+    version=settings.service_version,
     lifespan=lifespan
 )
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_origins=["*"],  # Configure appropriately for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Include API routes
-app.include_router(router, prefix="/api/v1")
-
-@app.get("/health", response_model=HealthResponse)
-async def health_check():
-    """Health check endpoint"""
-    global model_loader
-    return HealthResponse(
-        status="healthy",
-        models_loaded=model_loader.is_loaded() if model_loader else False,
-        service="nlp-service"
-    )
+app.include_router(router, prefix="/api/v1", tags=["NLP Analysis"])
 
 @app.get("/")
 async def root():
     """Root endpoint"""
     return {
-        "service": "nlp-service",
-        "version": "1.0.0",
+        "service": settings.service_name,
+        "version": settings.service_version,
         "status": "running"
     }
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(
-        "src.main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=os.getenv("DEBUG", "false").lower() == "true"
-    )
+
+@app.get("/health")
+async def health():
+    """Health check endpoint (alias)"""
+    from src.api.routes import health_check
+    return await health_check()

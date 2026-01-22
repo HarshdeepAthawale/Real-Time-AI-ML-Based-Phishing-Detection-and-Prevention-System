@@ -1,3 +1,0 @@
-"""
-NLP model training scripts
-"""

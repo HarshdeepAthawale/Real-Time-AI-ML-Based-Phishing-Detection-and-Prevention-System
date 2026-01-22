@@ -118,8 +118,16 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
   }
   body {
     @apply bg-background text-foreground;
+    transition-property: background-color, color;
+    transition-duration: 200ms;
+  }
+  html {
+    scroll-behavior: smooth;
   }
 }

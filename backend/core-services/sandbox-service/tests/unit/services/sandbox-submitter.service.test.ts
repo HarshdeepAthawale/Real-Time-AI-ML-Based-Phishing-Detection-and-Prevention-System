@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { SandboxSubmitterService } from '../../../src/services/sandbox-submitter.service';
 import { FileAnalyzerService } from '../../../src/services/file-analyzer.service';
 import { DataSource, Repository } from 'typeorm';

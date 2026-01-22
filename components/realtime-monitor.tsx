@@ -1,74 +1,36 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Activity, Zap, AlertCircle, Eye } from 'lucide-react'
-
-interface LiveEvent {
-  id: string
-  type: 'detection' | 'blocked' | 'alert'
-  message: string
-  timestamp: Date
-}
+import { Activity, Zap, AlertCircle, Eye, Wifi, WifiOff } from 'lucide-react'
+import { useWebSocket } from '@/hooks/use-websocket'
+import { LiveEvent } from '@/lib/types/api'
+import { Spinner } from '@/components/ui/loading'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ErrorBoundary } from '@/components/error-boundary'
 
 export default function RealtimeMonitor() {
-  const [events, setEvents] = useState<LiveEvent[]>([
-    {
-      id: '1',
-      type: 'blocked',
-      message: 'Phishing email blocked from external sender',
-      timestamp: new Date(Date.now() - 5000),
+  const { isConnected, events, connect, disconnect } = useWebSocket({
+    autoConnect: true,
+    onConnect: () => {
+      console.log('WebSocket connected');
     },
-    {
-      id: '2',
-      type: 'detection',
-      message: 'Suspicious URL pattern detected in message',
-      timestamp: new Date(Date.now() - 15000),
+    onDisconnect: () => {
+      console.log('WebSocket disconnected');
     },
-    {
-      id: '3',
-      type: 'alert',
-      message: 'High-confidence AI-generated content identified',
-      timestamp: new Date(Date.now() - 45000),
+    onError: (error) => {
+      console.error('WebSocket error:', error);
     },
-  ])
+  });
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const types: ('detection' | 'blocked' | 'alert')[] = ['detection', 'blocked', 'alert']
-      const messages = {
-        detection: [
-          'Suspicious URL pattern detected',
-          'Homoglyph attack indicators found',
-          'Domain reputation score lowered',
-        ],
-        blocked: [
-          'Phishing email blocked',
-          'Malicious link intercepted',
-          'Credential harvesting attempt blocked',
-        ],
-        alert: [
-          'AI-generated content identified',
-          'New threat pattern detected',
-          'Anomaly in email headers',
-        ],
-      }
-
-      const randomType = types[Math.floor(Math.random() * types.length)]
-      const randomMessage =
-        messages[randomType][Math.floor(Math.random() * messages[randomType].length)]
-
-      const newEvent: LiveEvent = {
-        id: Date.now().toString(),
-        type: randomType,
-        message: randomMessage,
-        timestamp: new Date(),
-      }
-
-      setEvents((prev) => [newEvent, ...prev.slice(0, 19)])
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [])
+  // Format events for display
+  const displayEvents: LiveEvent[] = events.map((event) => ({
+    id: event.id,
+    type: event.type === 'threat_detected' ? 'alert' : 
+          event.type === 'url_analyzed' || event.type === 'email_analyzed' ? 'detection' : 
+          event.type as 'detection' | 'blocked' | 'alert',
+    message: event.message,
+    timestamp: event.timestamp,
+  }));
 
   const getEventColor = (type: string) => {
     switch (type) {
@@ -97,7 +59,8 @@ export default function RealtimeMonitor() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <ErrorBoundary>
+      <div className="p-6 space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
@@ -111,24 +74,49 @@ export default function RealtimeMonitor() {
       <div className="bg-card rounded-lg border border-border p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-3 h-3 bg-chart-1 rounded-full animate-pulse" />
+            {isConnected ? (
+              <Wifi className="w-5 h-5 text-chart-1" />
+            ) : (
+              <WifiOff className="w-5 h-5 text-destructive" />
+            )}
             <div>
               <h3 className="text-lg font-semibold text-foreground">System Status</h3>
-              <p className="text-sm text-muted-foreground">All systems operational</p>
+              <p className="text-sm text-muted-foreground">
+                {isConnected ? 'All systems operational' : 'Connecting...'}
+              </p>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold text-foreground">15.2k</p>
-            <p className="text-xs text-muted-foreground">events/hour</p>
+            <p className="text-2xl font-bold text-foreground">{events.length}</p>
+            <p className="text-xs text-muted-foreground">events received</p>
           </div>
         </div>
+        {!isConnected && (
+          <Alert className="mt-4">
+            <AlertDescription>
+              WebSocket disconnected. Attempting to reconnect...
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
 
       {/* Events Log */}
       <div className="bg-card rounded-lg border border-border p-6">
         <h3 className="text-lg font-semibold text-foreground mb-4">Event Stream</h3>
-        <div className="space-y-3 max-h-[600px] overflow-y-auto">
-          {events.map((event) => (
+        {displayEvents.length === 0 && !isConnected ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <Spinner className="mb-4" />
+              <p className="text-sm text-muted-foreground">Connecting to event stream...</p>
+            </div>
+          </div>
+        ) : displayEvents.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-sm text-muted-foreground">No events yet. Waiting for threats...</p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-[600px] overflow-y-auto">
+            {displayEvents.map((event) => (
             <div
               key={event.id}
               className={`p-4 rounded-lg border transition-all ${getEventColor(event.type)}`}
@@ -140,32 +128,46 @@ export default function RealtimeMonitor() {
                   <p className="text-sm text-muted-foreground mt-1">{event.message}</p>
                 </div>
                 <div className="text-xs text-muted-foreground whitespace-nowrap ml-4">
-                  {Math.round((Date.now() - event.timestamp.getTime()) / 1000)}s ago
+                  {(() => {
+                    const timestamp = event.timestamp instanceof Date ? event.timestamp : new Date(event.timestamp);
+                    const seconds = Math.round((Date.now() - timestamp.getTime()) / 1000);
+                    if (seconds < 60) return `${seconds}s ago`;
+                    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+                    return `${Math.floor(seconds / 3600)}h ago`;
+                  })()}
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Network Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-card rounded-lg border border-border p-6">
-          <h4 className="text-sm font-semibold text-muted-foreground mb-2">Active Connections</h4>
-          <p className="text-3xl font-bold text-foreground">1,247</p>
-          <p className="text-xs text-muted-foreground mt-2">+89 since last hour</p>
+          <h4 className="text-sm font-semibold text-muted-foreground mb-2">Events Received</h4>
+          <p className="text-3xl font-bold text-foreground">{events.length}</p>
+          <p className="text-xs text-muted-foreground mt-2">Real-time stream</p>
         </div>
         <div className="bg-card rounded-lg border border-border p-6">
-          <h4 className="text-sm font-semibold text-muted-foreground mb-2">Traffic Scanned</h4>
-          <p className="text-3xl font-bold text-foreground">2.3GB</p>
-          <p className="text-xs text-muted-foreground mt-2">Real-time analysis</p>
+          <h4 className="text-sm font-semibold text-muted-foreground mb-2">Connection Status</h4>
+          <p className={`text-3xl font-bold ${isConnected ? 'text-chart-1' : 'text-destructive'}`}>
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">
+            {isConnected ? 'WebSocket active' : 'Reconnecting...'}
+          </p>
         </div>
         <div className="bg-card rounded-lg border border-border p-6">
-          <h4 className="text-sm font-semibold text-muted-foreground mb-2">Model Accuracy</h4>
-          <p className="text-3xl font-bold text-foreground">98.7%</p>
-          <p className="text-xs text-muted-foreground mt-2">Last 24 hours</p>
+          <h4 className="text-sm font-semibold text-muted-foreground mb-2">Threats Detected</h4>
+          <p className="text-3xl font-bold text-foreground">
+            {displayEvents.filter(e => e.type === 'alert' || e.type === 'blocked').length}
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">In current session</p>
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   )
 }

@@ -1,8 +1,8 @@
 import { ECSClient, RunTaskCommand, DescribeTasksCommand } from '@aws-sdk/client-ecs';
 import { DataSource } from 'typeorm';
-import { config } from '../../../shared/config';
+import { config } from '../../../../shared/config';
 import { logger } from '../utils/logger';
-import { TrainingJob } from '../../../shared/database/models';
+import { TrainingJob } from '../../../../shared/database/models';
 
 export interface TrainingTaskConfig {
   modelType: string;

@@ -8,8 +8,8 @@ export const config = {
   
   mlServices: {
     nlp: process.env.NLP_SERVICE_URL || 'http://nlp-service:8000',
-    url: process.env.URL_SERVICE_URL || 'http://url-service:8000',
-    visual: process.env.VISUAL_SERVICE_URL || 'http://visual-service:8000'
+    url: process.env.URL_SERVICE_URL || 'http://url-service:8001',
+    visual: process.env.VISUAL_SERVICE_URL || 'http://visual-service:8002'
   },
   
   redis: {

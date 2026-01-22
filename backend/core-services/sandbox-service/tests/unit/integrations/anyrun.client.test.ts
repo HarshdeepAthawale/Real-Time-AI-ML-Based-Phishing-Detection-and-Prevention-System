@@ -10,15 +10,24 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 describe('AnyRunClient', () => {
   let client: AnyRunClient;
   const apiKey = 'test-api-key';
+  let mockAxiosInstance: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    
+    mockAxiosInstance = {
+      post: jest.fn(),
+      get: jest.fn(),
+    };
+
+    mockedAxios.create = jest.fn().mockReturnValue(mockAxiosInstance);
+    
     client = new AnyRunClient(apiKey);
   });
 
   describe('submitFile', () => {
     it('should submit file successfully', async () => {
-      const mockPost = jest.fn().mockResolvedValue({
+      mockAxiosInstance.post.mockResolvedValue({
         data: {
           data: {
             taskid: 'anyrun-task-123',
@@ -26,15 +35,18 @@ describe('AnyRunClient', () => {
         },
       });
 
-      mockedAxios.create = jest.fn().mockReturnValue({
-        post: mockPost,
-      } as any);
+      // Mock FormData
+      const mockFormData = {
+        append: jest.fn(),
+        getHeaders: jest.fn().mockReturnValue({}),
+      };
+      (FormData as any).mockImplementation(() => mockFormData);
 
       const fileBuffer = Buffer.from('test');
       const result = await client.submitFile(fileBuffer, 'test.exe');
 
       expect(result).toBe('anyrun-task-123');
-      expect(mockPost).toHaveBeenCalled();
+      expect(mockAxiosInstance.post).toHaveBeenCalled();
     });
 
     it('should handle submission errors', async () => {
@@ -52,7 +64,7 @@ describe('AnyRunClient', () => {
 
   describe('submitURL', () => {
     it('should submit URL successfully', async () => {
-      const mockPost = jest.fn().mockResolvedValue({
+      mockAxiosInstance.post.mockResolvedValue({
         data: {
           data: {
             taskid: 'anyrun-url-123',
@@ -60,30 +72,22 @@ describe('AnyRunClient', () => {
         },
       });
 
-      mockedAxios.create = jest.fn().mockReturnValue({
-        post: mockPost,
-      } as any);
-
       const result = await client.submitURL('http://example.com');
 
       expect(result).toBe('anyrun-url-123');
-      expect(mockPost).toHaveBeenCalled();
+      expect(mockAxiosInstance.post).toHaveBeenCalled();
     });
   });
 
   describe('getStatus', () => {
     it('should get status successfully', async () => {
-      const mockGet = jest.fn().mockResolvedValue({
+      mockAxiosInstance.get.mockResolvedValue({
         data: {
           data: {
             status: 'done',
           },
         },
       });
-
-      mockedAxios.create = jest.fn().mockReturnValue({
-        get: mockGet,
-      } as any);
 
       const result = await client.getStatus('task-123');
 
@@ -102,17 +106,13 @@ describe('AnyRunClient', () => {
       ];
 
       for (const { input, expected } of statusMap) {
-        const mockGet = jest.fn().mockResolvedValue({
+        mockAxiosInstance.get.mockResolvedValue({
           data: {
             data: {
               status: input,
             },
           },
         });
-
-        mockedAxios.create = jest.fn().mockReturnValue({
-          get: mockGet,
-        } as any);
 
         const result = await client.getStatus('task-123');
         expect(result.status).toBe(expected);
@@ -122,7 +122,7 @@ describe('AnyRunClient', () => {
 
   describe('getResults', () => {
     it('should extract results correctly', async () => {
-      const mockGet = jest.fn().mockResolvedValue({
+      mockAxiosInstance.get.mockResolvedValue({
         data: {
           data: {
             status: 'done',
@@ -168,10 +168,6 @@ describe('AnyRunClient', () => {
         },
       });
 
-      mockedAxios.create = jest.fn().mockReturnValue({
-        get: mockGet,
-      } as any);
-
       const result = await client.getResults('task-123');
 
       expect(result.status).toBe('completed');
@@ -182,17 +178,13 @@ describe('AnyRunClient', () => {
     });
 
     it('should handle incomplete analysis', async () => {
-      const mockGet = jest.fn().mockResolvedValue({
+      mockAxiosInstance.get.mockResolvedValue({
         data: {
           data: {
             status: 'running',
           },
         },
       });
-
-      mockedAxios.create = jest.fn().mockReturnValue({
-        get: mockGet,
-      } as any);
 
       const result = await client.getResults('task-123');
 

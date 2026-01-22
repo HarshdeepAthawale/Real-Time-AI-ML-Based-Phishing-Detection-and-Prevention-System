@@ -1,1 +1,1 @@
-"""Graph Construction and Analysis"""
+"""Graph construction and analysis"""

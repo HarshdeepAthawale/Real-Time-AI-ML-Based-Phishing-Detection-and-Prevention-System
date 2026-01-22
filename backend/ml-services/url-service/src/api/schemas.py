@@ -1,62 +1,70 @@
+"""Pydantic request/response models"""
 from pydantic import BaseModel, Field, HttpUrl
-from typing import Optional, Dict, List
+from typing import Optional, List, Dict
+
 
 class URLAnalysisRequest(BaseModel):
+    """Request model for URL analysis"""
     url: str = Field(..., description="URL to analyze")
-    legitimate_domain: Optional[str] = Field(None, description="Legitimate domain for comparison (homoglyph detection)")
+    include_dns: bool = Field(default=True, description="Include DNS analysis")
+    include_whois: bool = Field(default=True, description="Include WHOIS analysis")
+    include_ssl: bool = Field(default=True, description="Include SSL analysis")
+    track_redirects: bool = Field(default=True, description="Track redirect chain")
+    check_homoglyph: bool = Field(default=True, description="Check for homoglyph attacks")
+
 
 class DomainAnalysisRequest(BaseModel):
+    """Request model for domain analysis"""
     domain: str = Field(..., description="Domain to analyze")
-    include_graph: bool = Field(False, description="Include graph-based analysis")
+    use_gnn: bool = Field(default=True, description="Use GNN model for classification")
 
-class RedirectChainRequest(BaseModel):
-    url: str = Field(..., description="URL to track redirect chain")
 
-class DomainReputationRequest(BaseModel):
-    domain: str = Field(..., description="Domain to get reputation for")
+class RedirectCheckRequest(BaseModel):
+    """Request model for redirect chain checking"""
+    url: str = Field(..., description="URL to check redirects")
+
+
+class HomoglyphCheckRequest(BaseModel):
+    """Request model for homoglyph detection"""
+    domain: str = Field(..., description="Domain to check")
+    legitimate_domain: Optional[str] = Field(None, description="Legitimate domain to compare against")
+
 
 class URLAnalysisResponse(BaseModel):
-    url_analysis: Dict
-    domain_analysis: Dict
-    dns_analysis: Dict
-    whois_analysis: Dict
+    """Response model for URL analysis"""
+    url: str
+    is_malicious: bool
+    malicious_probability: float
+    confidence: float
+    url_components: Dict
+    domain_analysis: Optional[Dict] = None
+    dns_analysis: Optional[Dict] = None
+    whois_analysis: Optional[Dict] = None
     ssl_analysis: Optional[Dict] = None
-    redirect_analysis: Dict
+    redirect_analysis: Optional[Dict] = None
     homoglyph_analysis: Optional[Dict] = None
-    reputation_score: Optional[Dict] = None
+    reputation_score: Optional[float] = None
+    risk_level: Optional[str] = None
     processing_time_ms: float
+    cached: bool = False
+
 
 class DomainAnalysisResponse(BaseModel):
+    """Response model for domain analysis"""
     domain: str
-    analysis: Dict
-    graph_analysis: Optional[Dict] = None
-    gnn_prediction: Optional[Dict] = None
+    malicious_probability: float
+    legitimate_probability: float
+    confidence: float
+    prediction: str
+    domain_features: Dict
+    reputation_score: float
+    risk_level: str
     processing_time_ms: float
 
-class RedirectChainResponse(BaseModel):
-    original_url: str
-    final_url: str
-    redirect_count: int
-    redirects: List[Dict]
-    is_suspicious: bool
-
-class DomainReputationResponse(BaseModel):
-    domain: str
-    reputation_score: float
-    reputation_level: str
-    is_suspicious: bool
-    is_malicious: bool
 
 class HealthResponse(BaseModel):
+    """Health check response"""
     status: str
     service: str
-    models_loaded: bool = False
-
-class CompatibilityAnalysisRequest(BaseModel):
-    url: str = Field(..., description="URL to analyze")
-
-class CompatibilityAnalysisResponse(BaseModel):
-    is_phishing: bool = Field(..., description="Whether the URL is identified as phishing")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0-1)")
-    features: Optional[Dict] = Field(None, description="Key analysis features")
-    model_version: str = Field(default="1.0.0", description="Model version used")
+    version: str
+    gnn_model_loaded: bool

@@ -1,61 +1,39 @@
+"""Extract graph-based features"""
 import networkx as nx
-from typing import Dict, List
-import numpy as np
+from typing import Dict
+
 
 class GraphFeatureExtractor:
-    def __init__(self):
-        pass
+    """Extract features from domain relationship graphs"""
     
-    def extract_features(self, graph: nx.DiGraph, node: str) -> Dict:
-        """Extract graph-based features for a node"""
-        if node not in graph:
-            return {}
+    def extract_features(self, graph: nx.Graph) -> Dict:
+        """
+        Extract graph features
         
-        features = {}
+        Args:
+            graph: NetworkX graph
+            
+        Returns:
+            Dictionary of graph features
+        """
+        features = {
+            "node_count": graph.number_of_nodes(),
+            "edge_count": graph.number_of_edges(),
+            "density": nx.density(graph) if graph.number_of_nodes() > 1 else 0.0,
+            "is_connected": nx.is_connected(graph) if graph.number_of_nodes() > 1 else True
+        }
         
-        # Basic degree features
-        in_degree = graph.in_degree(node)
-        out_degree = graph.out_degree(node)
-        total_degree = in_degree + out_degree
-        
-        features["in_degree"] = in_degree
-        features["out_degree"] = out_degree
-        features["total_degree"] = total_degree
-        
-        # Neighbor features
-        predecessors = list(graph.predecessors(node))
-        successors = list(graph.successors(node))
-        
-        features["num_predecessors"] = len(predecessors)
-        features["num_successors"] = len(successors)
+        # Average degree
+        if graph.number_of_nodes() > 0:
+            degrees = dict(graph.degree())
+            features["average_degree"] = sum(degrees.values()) / len(degrees)
+        else:
+            features["average_degree"] = 0.0
         
         # Clustering coefficient
         try:
-            clustering = nx.clustering(graph.to_undirected(), node)
-            features["clustering_coefficient"] = clustering
-        except:
+            features["clustering_coefficient"] = nx.average_clustering(graph)
+        except Exception:
             features["clustering_coefficient"] = 0.0
-        
-        # PageRank (if calculated)
-        if hasattr(graph, 'pagerank'):
-            features["pagerank"] = graph.pagerank.get(node, 0.0)
-        
-        return features
-    
-    def extract_global_features(self, graph: nx.DiGraph) -> Dict:
-        """Extract global graph features"""
-        features = {}
-        
-        features["num_nodes"] = graph.number_of_nodes()
-        features["num_edges"] = graph.number_of_edges()
-        features["density"] = nx.density(graph)
-        
-        # Check if graph is connected
-        if graph.number_of_nodes() > 0:
-            try:
-                is_connected = nx.is_weakly_connected(graph)
-                features["is_connected"] = is_connected
-            except:
-                features["is_connected"] = False
         
         return features

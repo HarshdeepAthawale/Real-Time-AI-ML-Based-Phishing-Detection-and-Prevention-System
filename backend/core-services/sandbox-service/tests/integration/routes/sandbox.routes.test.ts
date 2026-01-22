@@ -20,6 +20,7 @@ describe('Sandbox Routes Integration', () => {
   let mockSubmitterService: jest.Mocked<SandboxSubmitterService>;
   let mockResultProcessor: jest.Mocked<ResultProcessorService>;
   let mockQueueJob: jest.Mocked<SandboxQueueJob>;
+  let mockRepository: any;
 
   beforeEach(() => {
     app = express();
@@ -46,7 +47,7 @@ describe('Sandbox Routes Integration', () => {
     } as any;
 
     // Mock repository
-    const mockRepository = {
+    mockRepository = {
       findOne: jest.fn().mockResolvedValue({
         id: 'test-analysis-id',
         sandbox_job_id: 'test-job-id',
@@ -123,7 +124,6 @@ describe('Sandbox Routes Integration', () => {
 
   describe('GET /api/v1/sandbox/analysis/:id', () => {
     it('should get analysis results', async () => {
-      const mockRepository = mockDataSource.getRepository() as any;
       mockRepository.findOne = jest.fn().mockResolvedValue({
         id: 'test-analysis-id',
         status: 'completed',
@@ -156,7 +156,6 @@ describe('Sandbox Routes Integration', () => {
     });
 
     it('should return 404 for non-existent analysis', async () => {
-      const mockRepository = mockDataSource.getRepository() as any;
       mockRepository.findOne = jest.fn().mockResolvedValue(null);
 
       const response = await request(app)
@@ -169,7 +168,6 @@ describe('Sandbox Routes Integration', () => {
 
   describe('GET /api/v1/sandbox/analyses', () => {
     it('should list analyses with pagination', async () => {
-      const mockRepository = mockDataSource.getRepository() as any;
       mockRepository.findAndCount = jest.fn().mockResolvedValue([
         [
           {

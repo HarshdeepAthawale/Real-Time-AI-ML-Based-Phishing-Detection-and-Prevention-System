@@ -8,10 +8,12 @@ import { config } from './config';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/error-handler.middleware';
 import detectionRoutes from './routes/detection.routes';
+import dashboardRoutes from './routes/dashboard.routes';
 import { setupWebSocket } from './routes/websocket.routes';
 import { CacheService } from './services/cache.service';
 import { EventStreamerService } from './services/event-streamer.service';
 import { setEventStreamer } from './routes/detection.routes';
+import { connectPostgreSQL } from '../../../shared/database/connection';
 
 const app = express();
 const httpServer = createServer(app);
@@ -21,6 +23,20 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST']
   }
 });
+
+// Initialize database connection
+let dataSourceInitialized = false;
+
+async function initializeDatabase() {
+  try {
+    await connectPostgreSQL();
+    dataSourceInitialized = true;
+    logger.info('Database connection initialized');
+  } catch (error) {
+    logger.error('Failed to initialize database connection', error);
+    // Continue without database - some endpoints may not work
+  }
+}
 
 // Middleware
 app.use(helmet());
@@ -38,6 +54,7 @@ setEventStreamer(eventStreamer);
 
 // Routes
 app.use('/api/v1/detect', detectionRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
 
 // WebSocket setup
 setupWebSocket(io, eventStreamer);
@@ -82,7 +99,17 @@ process.on('SIGINT', async () => {
 
 // Start server
 const PORT = config.port;
-httpServer.listen(PORT, () => {
-  logger.info(`Detection API server running on port ${PORT}`);
-  logger.info(`WebSocket server ready for connections`);
+
+// Initialize database and start server
+initializeDatabase().then(() => {
+  httpServer.listen(PORT, () => {
+    logger.info(`Detection API server running on port ${PORT}`);
+    logger.info(`WebSocket server ready for connections`);
+    if (!dataSourceInitialized) {
+      logger.warn('Database not initialized - some endpoints may not work');
+    }
+  });
+}).catch((error) => {
+  logger.error('Failed to start server', error);
+  process.exit(1);
 });

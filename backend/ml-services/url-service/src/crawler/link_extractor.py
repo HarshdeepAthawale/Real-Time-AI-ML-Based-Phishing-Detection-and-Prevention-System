@@ -1,72 +1,45 @@
+"""Extract links from web pages"""
 import requests
 from bs4 import BeautifulSoup
-from typing import List, Dict, Set
-from urllib.parse import urljoin, urlparse
-import re
+from typing import List
+from urllib.parse import urljoin
+from src.utils.logger import logger
+
 
 class LinkExtractor:
-    def __init__(self, timeout: int = 10):
-        self.timeout = timeout
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
+    """Extract links from web pages"""
     
-    def extract_links(self, url: str) -> Dict:
-        """Extract all links from a webpage"""
-        results = {
-            "url": url,
-            "links": [],
-            "external_links": [],
-            "internal_links": [],
-            "error": None
-        }
+    def extract(self, url: str, max_links: int = 100) -> List[str]:
+        """
+        Extract links from webpage
         
+        Args:
+            url: URL to extract links from
+            max_links: Maximum number of links to extract
+            
+        Returns:
+            List of extracted URLs
+        """
         try:
-            response = self.session.get(url, timeout=self.timeout)
-            response.raise_for_status()
+            response = requests.get(
+                url,
+                timeout=10,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
             
             soup = BeautifulSoup(response.content, 'html.parser')
-            base_domain = urlparse(url).netloc
-            
-            # Extract all anchor tags
             links = []
-            for tag in soup.find_all('a', href=True):
-                href = tag.get('href')
-                if href:
-                    absolute_url = urljoin(url, href)
-                    parsed = urlparse(absolute_url)
-                    
-                    link_info = {
-                        "url": absolute_url,
-                        "text": tag.get_text(strip=True),
-                        "domain": parsed.netloc,
-                        "is_external": parsed.netloc != base_domain if parsed.netloc else False
-                    }
-                    links.append(link_info)
-                    
-                    if link_info["is_external"]:
-                        results["external_links"].append(link_info)
-                    else:
-                        results["internal_links"].append(link_info)
             
-            results["links"] = links
+            for link in soup.find_all('a', href=True):
+                href = link['href']
+                absolute_url = urljoin(url, href)
+                links.append(absolute_url)
+                
+                if len(links) >= max_links:
+                    break
             
-        except requests.exceptions.RequestException as e:
-            results["error"] = str(e)
+            return links
+        
         except Exception as e:
-            results["error"] = str(e)
-        
-        return results
-    
-    def extract_domains(self, url: str) -> Set[str]:
-        """Extract unique domains from page links"""
-        link_data = self.extract_links(url)
-        domains = set()
-        
-        for link in link_data.get("links", []):
-            domain = link.get("domain")
-            if domain:
-                domains.add(domain)
-        
-        return domains
+            logger.error(f"Error extracting links from {url}: {e}")
+            return []

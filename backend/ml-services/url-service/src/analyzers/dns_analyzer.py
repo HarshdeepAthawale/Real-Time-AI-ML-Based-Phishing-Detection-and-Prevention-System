@@ -1,11 +1,26 @@
+"""DNS record analysis"""
 import dns.resolver
-import dns.reversename
-from typing import Dict, List, Optional
-from datetime import datetime
+from typing import Dict
+from src.config import settings
+from src.utils.logger import logger
+
 
 class DNSAnalyzer:
+    """Analyze DNS records for domain"""
+    
+    def __init__(self):
+        self.timeout = settings.dns_timeout
+    
     def analyze(self, domain: str) -> Dict:
-        """Analyze DNS records for domain"""
+        """
+        Analyze DNS records
+        
+        Args:
+            domain: Domain to analyze
+            
+        Returns:
+            Dictionary with DNS analysis
+        """
         results = {
             "domain": domain,
             "a_records": [],
@@ -13,63 +28,66 @@ class DNSAnalyzer:
             "mx_records": [],
             "txt_records": [],
             "ns_records": [],
-            "cname_records": [],
-            "dns_age_days": None,
-            "has_dns": False
+            "has_dns": False,
+            "record_count": 0
         }
         
         try:
-            # A records
+            # Configure resolver timeout
+            resolver = dns.resolver.Resolver()
+            resolver.timeout = self.timeout
+            resolver.lifetime = self.timeout
+            
+            # A records (IPv4)
             try:
-                a_records = dns.resolver.resolve(domain, 'A')
+                a_records = resolver.resolve(domain, 'A')
                 results["a_records"] = [str(rdata) for rdata in a_records]
                 results["has_dns"] = True
-            except:
+            except Exception:
                 pass
             
             # AAAA records (IPv6)
             try:
-                aaaa_records = dns.resolver.resolve(domain, 'AAAA')
+                aaaa_records = resolver.resolve(domain, 'AAAA')
                 results["aaaa_records"] = [str(rdata) for rdata in aaaa_records]
-            except:
+            except Exception:
                 pass
             
-            # MX records
+            # MX records (Mail servers)
             try:
-                mx_records = dns.resolver.resolve(domain, 'MX')
+                mx_records = resolver.resolve(domain, 'MX')
                 results["mx_records"] = [
                     {"priority": rdata.preference, "exchange": str(rdata.exchange)}
                     for rdata in mx_records
                 ]
-            except:
+            except Exception:
                 pass
             
-            # TXT records (for SPF, DKIM, etc.)
+            # TXT records (SPF, DKIM, etc.)
             try:
-                txt_records = dns.resolver.resolve(domain, 'TXT')
+                txt_records = resolver.resolve(domain, 'TXT')
                 results["txt_records"] = [str(rdata) for rdata in txt_records]
-            except:
+            except Exception:
                 pass
             
-            # NS records
+            # NS records (Name servers)
             try:
-                ns_records = dns.resolver.resolve(domain, 'NS')
+                ns_records = resolver.resolve(domain, 'NS')
                 results["ns_records"] = [str(rdata) for rdata in ns_records]
-            except:
+            except Exception:
                 pass
             
-            # CNAME records
-            try:
-                cname_records = dns.resolver.resolve(domain, 'CNAME')
-                results["cname_records"] = [str(rdata) for rdata in cname_records]
-            except:
-                pass
-            
-            # Calculate DNS age (first seen)
-            # This would require historical DNS data
-            # For now, mark as unknown
-            
+            # Count total records
+            results["record_count"] = (
+                len(results["a_records"]) +
+                len(results["aaaa_records"]) +
+                len(results["mx_records"]) +
+                len(results["txt_records"]) +
+                len(results["ns_records"])
+            )
+        
         except Exception as e:
+            logger.error(f"DNS analysis error for {domain}: {e}")
             results["error"] = str(e)
         
         return results

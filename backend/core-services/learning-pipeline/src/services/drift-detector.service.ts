@@ -1,6 +1,6 @@
 import { DataSource } from 'typeorm';
 import { logger } from '../utils/logger';
-import { ModelPerformance, MLModel } from '../../../shared/database/models';
+import { ModelPerformance, MLModel } from '../../../../shared/database/models';
 
 export interface DriftResult {
   hasDrift: boolean;

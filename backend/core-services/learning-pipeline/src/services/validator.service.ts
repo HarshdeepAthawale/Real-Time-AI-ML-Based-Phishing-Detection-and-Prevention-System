@@ -1,8 +1,8 @@
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { DataSource } from 'typeorm';
-import { config } from '../../../shared/config';
+import { config } from '../../../../shared/config';
 import { logger } from '../utils/logger';
-import { MLModel, ModelPerformance } from '../../../shared/database/models';
+import { MLModel, ModelPerformance } from '../../../../shared/database/models';
 
 export interface ModelMetrics {
   accuracy: number;

@@ -1,1 +1,1 @@
-"""Feature analyzers for phishing detection"""
+"""Analyzer modules for phishing indicators"""

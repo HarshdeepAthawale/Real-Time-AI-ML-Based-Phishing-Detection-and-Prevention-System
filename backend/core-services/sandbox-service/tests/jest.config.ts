@@ -6,7 +6,12 @@ const config: Config = {
   roots: ['<rootDir>/../src', '<rootDir>'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
   transform: {
-    '^.+\\.ts$': 'ts-jest',
+    '^.+\\.ts$': ['ts-jest', {
+      tsconfig: {
+        experimentalDecorators: true,
+        emitDecoratorMetadata: true,
+      },
+    }],
   },
   collectCoverageFrom: [
     'src/**/*.ts',
@@ -29,6 +34,14 @@ const config: Config = {
     '^@/(.*)$': '<rootDir>/../src/$1',
   },
   setupFilesAfterEnv: ['<rootDir>/helpers/test-setup.ts'],
+  globals: {
+    'ts-jest': {
+      tsconfig: {
+        experimentalDecorators: true,
+        emitDecoratorMetadata: true,
+      },
+    },
+  },
   testTimeout: 10000,
   verbose: true,
 };
