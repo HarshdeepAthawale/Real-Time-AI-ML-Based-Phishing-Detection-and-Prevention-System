@@ -18,3 +18,9 @@ export const detectTextSchema = z.object({
   includeFeatures: z.boolean().optional(),
   organizationId: z.string().uuid().optional()
 });
+
+export const detectSMSSchema = z.object({
+  message: z.string().min(1, 'SMS message content is required'),
+  sender: z.string().optional(),
+  organizationId: z.string().uuid().optional()
+});

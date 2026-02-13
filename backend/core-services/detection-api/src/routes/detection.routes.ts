@@ -6,7 +6,7 @@ import { CacheService } from '../services/cache.service';
 import { EventStreamerService } from '../services/event-streamer.service';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { rateLimitMiddleware } from '../middleware/rate-limit.middleware';
-import { detectEmailSchema, detectURLSchema, detectTextSchema } from '../utils/validators';
+import { detectEmailSchema, detectURLSchema, detectTextSchema, detectSMSSchema } from '../utils/validators';
 import { logger } from '../utils/logger';
 import { getPostgreSQL } from '../../../../shared/database/connection';
 import { Threat as ThreatEntity } from '../../../../shared/database/models/Threat';
@@ -293,6 +293,93 @@ router.post('/text',
         });
       }
       logger.error('Text detection error', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+router.post('/sms',
+  authMiddleware,
+  rateLimitMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const validated = detectSMSSchema.parse(req.body);
+
+      // Check cache
+      const cacheKey = cacheService.generateCacheKey('sms', validated.message);
+      const cached = await cacheService.get(cacheKey);
+
+      if (cached) {
+        logger.debug('Cache hit for SMS detection', { cacheKey });
+        return res.json({
+          ...cached,
+          cached: true
+        });
+      }
+
+      // Extract URLs from SMS for URL analysis
+      const urlPattern = /https?:\/\/[^\s]+/g;
+      const urls = validated.message.match(urlPattern) || [];
+
+      // Analyze SMS text using NLP pipeline (no header parsing needed)
+      const mlResponse = await orchestrator.analyzeText({
+        text: validated.message,
+        includeFeatures: false,
+        organizationId: validated.organizationId || req.organizationId
+      });
+
+      // If URLs found in SMS, also run URL analysis
+      if (urls.length > 0) {
+        try {
+          const urlResponse = await orchestrator.analyzeURL({
+            url: urls[0],
+            organizationId: validated.organizationId || req.organizationId
+          });
+          mlResponse.url = urlResponse.url;
+        } catch (err) {
+          logger.warn('URL analysis in SMS failed', err);
+        }
+      }
+
+      const threat = decisionEngine.makeDecision(mlResponse, {
+        ...validated,
+        text: validated.message
+      });
+
+      // Add SMS-specific metadata
+      (threat as any).inputType = 'sms';
+      (threat as any).sender = validated.sender || null;
+      (threat as any).urlsFound = urls;
+
+      // Save threat to database if detected
+      const orgId = validated.organizationId || req.organizationId;
+      const threatId = await saveThreatToDatabase(threat, orgId, validated, mlResponse);
+
+      // Cache result
+      await cacheService.set(cacheKey, threat, 3600);
+
+      // Broadcast event if threat detected
+      if (eventStreamer && threat.isThreat) {
+        if (orgId) {
+          eventStreamer.broadcastThreat(orgId, threat);
+        } else {
+          eventStreamer.broadcastEvent('threat_detected', {
+            type: 'sms',
+            threat
+          });
+        }
+      }
+
+      res.json(threat);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        logger.warn('Validation error', { errors: error.errors });
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: error.errors
+        });
+      }
+      logger.error('SMS detection error', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }

@@ -43,8 +43,10 @@ class URLAnalysisResponse(BaseModel):
     ssl_analysis: Optional[Dict] = None
     redirect_analysis: Optional[Dict] = None
     homoglyph_analysis: Optional[Dict] = None
+    obfuscation_analysis: Optional[Dict] = None
     reputation_score: Optional[float] = None
     risk_level: Optional[str] = None
+    phishing_probability: Optional[float] = None
     processing_time_ms: float
     cached: bool = False
 

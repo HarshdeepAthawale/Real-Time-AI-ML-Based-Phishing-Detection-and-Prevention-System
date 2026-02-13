@@ -13,6 +13,7 @@ from src.analyzers.dns_analyzer import DNSAnalyzer
 from src.analyzers.whois_analyzer import WHOISAnalyzer
 from src.analyzers.ssl_analyzer import SSLAnalyzer
 from src.analyzers.homoglyph_detector import HomoglyphDetector
+from src.analyzers.obfuscation_analyzer import ObfuscationAnalyzer
 from src.crawler.redirect_tracker import RedirectTracker
 from src.graph.graph_builder import GraphBuilder
 from src.utils.cache import cache_service
@@ -28,6 +29,7 @@ dns_analyzer = DNSAnalyzer()
 whois_analyzer = WHOISAnalyzer()
 ssl_analyzer = SSLAnalyzer()
 homoglyph_detector = HomoglyphDetector()
+obfuscation_analyzer = ObfuscationAnalyzer()
 redirect_tracker = RedirectTracker()
 graph_builder = GraphBuilder()
 reputation_scorer = ReputationScorer()
@@ -37,6 +39,53 @@ gnn_classifier = DomainGNNClassifier(
     model_path=settings.gnn_model_path,
     device=settings.inference_device
 )
+
+
+def _compute_phishing_probability(
+    reputation_result: dict,
+    obfuscation_analysis: dict,
+    redirect_analysis: dict | None,
+    homoglyph_analysis: dict | None,
+    gnn_probability: float,
+) -> float:
+    """Compute an ensemble phishing probability from heuristic signals."""
+    score = 0.0
+    weight_total = 0.0
+
+    # Reputation score (inverted: low reputation = high phishing probability)
+    rep_score = reputation_result.get("reputation_score", 100)
+    rep_phishing = max(0.0, (100 - rep_score) / 100.0)
+    score += rep_phishing * 0.30
+    weight_total += 0.30
+
+    # Obfuscation score
+    obf_score = obfuscation_analysis.get("obfuscation_score", 0.0)
+    score += obf_score * 0.25
+    weight_total += 0.25
+
+    # Redirect analysis
+    if redirect_analysis:
+        redirect_count = redirect_analysis.get("redirect_count", 0)
+        is_suspicious = redirect_analysis.get("is_suspicious", False)
+        redirect_signal = min(1.0, redirect_count / 5.0) if redirect_count > 1 else 0.0
+        if is_suspicious:
+            redirect_signal = max(redirect_signal, 0.6)
+        score += redirect_signal * 0.15
+        weight_total += 0.15
+
+    # Homoglyph analysis
+    if homoglyph_analysis:
+        is_homoglyph = homoglyph_analysis.get("is_suspicious", False)
+        if is_homoglyph:
+            score += 0.15
+        weight_total += 0.15
+
+    # GNN model (if available and not default 0.5)
+    if abs(gnn_probability - 0.5) > 0.01:
+        score += gnn_probability * 0.15
+        weight_total += 0.15
+
+    return min(1.0, score / weight_total) if weight_total > 0 else 0.0
 
 
 @router.post("/analyze-url", response_model=URLAnalysisResponse)
@@ -90,13 +139,16 @@ async def analyze_url(request: URLAnalysisRequest):
         homoglyph_analysis = None
         if request.check_homoglyph:
             homoglyph_analysis = homoglyph_detector.check_against_popular_domains(domain)
-        
+
+        # Obfuscation analysis
+        obfuscation_analysis = obfuscation_analyzer.analyze(request.url)
+
         # Calculate reputation score
         if dns_analysis:
             domain_analysis["has_dns"] = dns_analysis.get("has_dns", False)
-        
+
         reputation_result = reputation_scorer.calculate_score(domain_analysis)
-        
+
         # GNN prediction (if model is loaded)
         malicious_probability = 0.5  # Default
         if gnn_classifier.model:
@@ -106,17 +158,24 @@ async def analyze_url(request: URLAnalysisRequest):
                 "domain": domain,
                 "reputation_score": reputation_result["reputation_score"]
             }])
-            
+
             gnn_result = gnn_classifier.predict(graph_data)
             malicious_probability = gnn_result.get("malicious_probability", 0.5)
-        
+
+        # Compute heuristic phishing probability from all signals
+        phishing_probability = _compute_phishing_probability(
+            reputation_result, obfuscation_analysis,
+            redirect_analysis, homoglyph_analysis,
+            malicious_probability
+        )
+
         processing_time = (time.time() - start_time) * 1000
-        
+
         response = URLAnalysisResponse(
             url=request.url,
-            is_malicious=malicious_probability > 0.5,
+            is_malicious=phishing_probability > 0.5,
             malicious_probability=malicious_probability,
-            confidence=abs(malicious_probability - 0.5) * 2,  # Normalized to 0-1
+            confidence=abs(phishing_probability - 0.5) * 2,
             url_components=url_components,
             domain_analysis=domain_analysis,
             dns_analysis=dns_analysis,
@@ -124,8 +183,10 @@ async def analyze_url(request: URLAnalysisRequest):
             ssl_analysis=ssl_analysis,
             redirect_analysis=redirect_analysis,
             homoglyph_analysis=homoglyph_analysis,
+            obfuscation_analysis=obfuscation_analysis,
             reputation_score=reputation_result["reputation_score"],
             risk_level=reputation_result["risk_level"],
+            phishing_probability=phishing_probability,
             processing_time_ms=processing_time,
             cached=False
         )

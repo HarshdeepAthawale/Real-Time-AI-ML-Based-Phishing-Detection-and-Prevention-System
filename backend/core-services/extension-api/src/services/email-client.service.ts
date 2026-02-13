@@ -16,6 +16,20 @@ export interface EmailAccountConfig {
   };
 }
 
+export interface OAuthConfig {
+  provider: 'gmail' | 'outlook';
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  scopes: string[];
+}
+
+export interface OAuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
+
 export interface EmailThreatEvent {
   email: ParsedMail;
   threat: {
@@ -300,5 +314,268 @@ export class EmailClientService extends EventEmitter {
   async disconnectAll(): Promise<void> {
     const accountIds = Array.from(this.connections.keys());
     await Promise.all(accountIds.map(id => this.disconnect(id)));
+  }
+
+  // =====================================================
+  // Gmail OAuth Integration
+  // =====================================================
+
+  /**
+   * Generate Gmail OAuth authorization URL
+   */
+  getGmailAuthUrl(config: OAuthConfig): string {
+    const params = new URLSearchParams({
+      client_id: config.clientId,
+      redirect_uri: config.redirectUri,
+      response_type: 'code',
+      scope: (config.scopes || [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.labels',
+      ]).join(' '),
+      access_type: 'offline',
+      prompt: 'consent',
+    });
+
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
+
+  /**
+   * Exchange Gmail authorization code for tokens
+   */
+  async exchangeGmailCode(
+    code: string,
+    config: OAuthConfig
+  ): Promise<OAuthTokens> {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        redirect_uri: config.redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gmail OAuth token exchange failed: ${error}`);
+    }
+
+    const data = await response.json();
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt: Date.now() + data.expires_in * 1000,
+    };
+  }
+
+  /**
+   * Fetch Gmail messages and scan for phishing
+   */
+  async scanGmailInbox(
+    tokens: OAuthTokens,
+    scanner: EmailScannerService,
+    maxResults: number = 10
+  ): Promise<any[]> {
+    const results: any[] = [];
+
+    try {
+      // List unread messages
+      const listResponse = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread&maxResults=${maxResults}`,
+        { headers: { Authorization: `Bearer ${tokens.accessToken}` } }
+      );
+
+      if (!listResponse.ok) {
+        throw new Error(`Gmail API error: ${listResponse.status}`);
+      }
+
+      const listData = await listResponse.json();
+      const messages = listData.messages || [];
+
+      for (const msg of messages) {
+        try {
+          const msgResponse = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
+            { headers: { Authorization: `Bearer ${tokens.accessToken}` } }
+          );
+
+          if (!msgResponse.ok) continue;
+          const msgData = await msgResponse.json();
+
+          // Extract headers
+          const headers = msgData.payload?.headers || [];
+          const subject = headers.find((h: any) => h.name === 'Subject')?.value || '';
+          const from = headers.find((h: any) => h.name === 'From')?.value || '';
+
+          // Extract body
+          let body = '';
+          if (msgData.payload?.body?.data) {
+            body = Buffer.from(msgData.payload.body.data, 'base64').toString('utf-8');
+          } else if (msgData.payload?.parts) {
+            const textPart = msgData.payload.parts.find(
+              (p: any) => p.mimeType === 'text/plain'
+            );
+            if (textPart?.body?.data) {
+              body = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
+            }
+          }
+
+          const emailContent = `Subject: ${subject}\nFrom: ${from}\n\n${body}`;
+          const scanResult = await scanner.scanEmail(emailContent, {
+            privacyMode: false,
+            scanLinks: true,
+            includeFullAnalysis: false,
+          });
+
+          results.push({
+            messageId: msg.id,
+            subject,
+            from,
+            isThreat: scanResult.isThreat,
+            severity: scanResult.severity,
+            confidence: scanResult.confidence,
+          });
+
+          if (scanResult.isThreat) {
+            this.emit('threatDetected', {
+              email: { subject, from, body },
+              threat: scanResult,
+              accountId: 'gmail',
+            });
+          }
+        } catch (err: any) {
+          logger.error('Failed to scan Gmail message', { messageId: msg.id, error: err.message });
+        }
+      }
+    } catch (error: any) {
+      logger.error('Gmail inbox scan failed', { error: error.message });
+      throw error;
+    }
+
+    return results;
+  }
+
+  // =====================================================
+  // Microsoft Outlook OAuth Integration
+  // =====================================================
+
+  /**
+   * Generate Microsoft OAuth authorization URL
+   */
+  getOutlookAuthUrl(config: OAuthConfig): string {
+    const params = new URLSearchParams({
+      client_id: config.clientId,
+      redirect_uri: config.redirectUri,
+      response_type: 'code',
+      scope: (config.scopes || [
+        'https://graph.microsoft.com/Mail.Read',
+        'offline_access',
+      ]).join(' '),
+      response_mode: 'query',
+    });
+
+    return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
+  }
+
+  /**
+   * Exchange Microsoft authorization code for tokens
+   */
+  async exchangeOutlookCode(
+    code: string,
+    config: OAuthConfig
+  ): Promise<OAuthTokens> {
+    const response = await fetch(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: config.clientId,
+          client_secret: config.clientSecret,
+          redirect_uri: config.redirectUri,
+          grant_type: 'authorization_code',
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Outlook OAuth token exchange failed: ${error}`);
+    }
+
+    const data = await response.json();
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt: Date.now() + data.expires_in * 1000,
+    };
+  }
+
+  /**
+   * Fetch Outlook messages and scan for phishing
+   */
+  async scanOutlookInbox(
+    tokens: OAuthTokens,
+    scanner: EmailScannerService,
+    maxResults: number = 10
+  ): Promise<any[]> {
+    const results: any[] = [];
+
+    try {
+      const response = await fetch(
+        `https://graph.microsoft.com/v1.0/me/messages?$filter=isRead eq false&$top=${maxResults}&$select=subject,from,body,bodyPreview`,
+        { headers: { Authorization: `Bearer ${tokens.accessToken}` } }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Microsoft Graph API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const messages = data.value || [];
+
+      for (const msg of messages) {
+        try {
+          const subject = msg.subject || '';
+          const from = msg.from?.emailAddress?.address || '';
+          const body = msg.body?.content || msg.bodyPreview || '';
+
+          const emailContent = `Subject: ${subject}\nFrom: ${from}\n\n${body}`;
+          const scanResult = await scanner.scanEmail(emailContent, {
+            privacyMode: false,
+            scanLinks: true,
+            includeFullAnalysis: false,
+          });
+
+          results.push({
+            messageId: msg.id,
+            subject,
+            from,
+            isThreat: scanResult.isThreat,
+            severity: scanResult.severity,
+            confidence: scanResult.confidence,
+          });
+
+          if (scanResult.isThreat) {
+            this.emit('threatDetected', {
+              email: { subject, from, body },
+              threat: scanResult,
+              accountId: 'outlook',
+            });
+          }
+        } catch (err: any) {
+          logger.error('Failed to scan Outlook message', { messageId: msg.id, error: err.message });
+        }
+      }
+    } catch (error: any) {
+      logger.error('Outlook inbox scan failed', { error: error.message });
+      throw error;
+    }
+
+    return results;
   }
 }

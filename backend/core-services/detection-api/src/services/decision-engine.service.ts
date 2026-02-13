@@ -61,7 +61,7 @@ export class DecisionEngineService {
     // URL score
     if (mlResponse.url) {
       const urlData = Array.isArray(mlResponse.url) ? mlResponse.url[0] : mlResponse.url;
-      
+
       // Use direct phishing_probability if available
       if (urlData.phishing_probability !== undefined) {
         scores.url = urlData.phishing_probability;
@@ -80,6 +80,12 @@ export class DecisionEngineService {
           scores.url += 0.25;
         }
         scores.url = Math.min(1.0, scores.url);
+      }
+
+      // Boost URL score with obfuscation signals
+      if (urlData.obfuscation_analysis?.is_obfuscated) {
+        const obfScore = urlData.obfuscation_analysis.obfuscation_score || 0;
+        scores.url = Math.min(1.0, scores.url + obfScore * 0.3);
       }
     }
     
@@ -199,6 +205,13 @@ export class DecisionEngineService {
       }
       if (urlData.redirect_analysis?.redirect_count && urlData.redirect_analysis.redirect_count > 3) {
         indicators.push('excessive_redirects');
+      }
+      if (urlData.obfuscation_analysis?.is_obfuscated) {
+        indicators.push('url_obfuscation');
+        const techniques = urlData.obfuscation_analysis.techniques_detected || [];
+        for (const technique of techniques) {
+          indicators.push(`obfuscation_${technique}`);
+        }
       }
     }
     if (mlResponse.visual?.form_analysis?.is_suspicious) {

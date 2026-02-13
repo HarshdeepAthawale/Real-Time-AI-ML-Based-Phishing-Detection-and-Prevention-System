@@ -7,6 +7,7 @@ import compression from 'compression';
 import { config } from './config';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/error-handler.middleware';
+import { latencyMiddleware, getLatencyStats } from './middleware/latency.middleware';
 import detectionRoutes from './routes/detection.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import { setupWebSocket } from './routes/websocket.routes';
@@ -42,6 +43,7 @@ async function initializeDatabase() {
 app.use(helmet());
 app.use(cors(config.cors));
 app.use(compression());
+app.use(latencyMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -63,7 +65,7 @@ setupWebSocket(io, eventStreamer);
 app.get('/health', async (req, res) => {
   const cacheStatus = await cacheService.isConnected();
   const wsClients = eventStreamer.getConnectedClientsCount();
-  
+
   res.json({
     status: 'healthy',
     service: 'detection-api',
@@ -72,6 +74,15 @@ app.get('/health', async (req, res) => {
       connectedClients: wsClients
     },
     timestamp: new Date().toISOString()
+  });
+});
+
+// Latency metrics endpoint
+app.get('/api/v1/metrics/latency', (req, res) => {
+  res.json({
+    service: 'detection-api',
+    timestamp: new Date().toISOString(),
+    endpoints: getLatencyStats()
   });
 });
 
