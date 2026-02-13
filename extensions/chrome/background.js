@@ -6,6 +6,9 @@ let BLOCK_SEVERITY = 'high'; // 'critical', 'high', 'medium', 'low'
 
 // Temporary allowlist (URLs user chose to proceed to)
 const allowlistedUrls = new Set();
+// Dynamic rules for proactive blocking (ruleId -> url)
+const threatRuleIds = new Map();
+const RULE_ID_BASE = 1000000;
 
 // Initialize extension
 chrome.runtime.onInstalled.addListener(() => {
@@ -41,6 +44,50 @@ function shouldBlock(severity) {
   const threatLevel = SEVERITY_LEVELS[severity] || 0;
   const thresholdLevel = SEVERITY_LEVELS[BLOCK_SEVERITY] || 2;
   return threatLevel >= thresholdLevel;
+}
+
+// Add dynamic rule to block URL on next navigation (proactive blocking)
+async function addThreatBlockRule(url, threatInfo) {
+  try {
+    const ruleId = RULE_ID_BASE + threatRuleIds.size;
+    const params = new URLSearchParams({
+      url: url,
+      type: threatInfo.threatType || 'phishing',
+      severity: threatInfo.severity || 'high',
+      confidence: String(threatInfo.confidence || 0),
+      indicators: (threatInfo.indicators || []).join(',')
+    });
+    const redirectUrl = chrome.runtime.getURL(`blocked.html?${params.toString()}`);
+
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      addRules: [{
+        id: ruleId,
+        priority: 1,
+        action: { type: 'redirect', redirect: { url: redirectUrl } },
+        condition: {
+          urlFilter: url,
+          resourceTypes: ['main_frame']
+        }
+      }],
+      removeRuleIds: []
+    });
+    threatRuleIds.set(url, ruleId);
+  } catch (e) {
+    console.warn('Could not add block rule:', e);
+  }
+}
+
+// Remove block rule when user proceeds anyway
+async function removeThreatBlockRule(url) {
+  const ruleId = threatRuleIds.get(url);
+  if (ruleId) {
+    try {
+      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [ruleId] });
+      threatRuleIds.delete(url);
+    } catch (e) {
+      console.warn('Could not remove block rule:', e);
+    }
+  }
 }
 
 // Check URL when tab is updated
@@ -79,7 +126,7 @@ async function checkURL(url, tabId) {
       const result = cached[cacheKey];
       updateBadge(result.isThreat, result.severity, tabId);
 
-      // Block if threat detected and blocking enabled
+      // Block if threat detected and blocking enabled (from cache - rule may already exist)
       if (result.isThreat && shouldBlock(result.severity)) {
         redirectToBlockedPage(tabId, url, result);
       }
@@ -114,8 +161,9 @@ async function checkURL(url, tabId) {
     if (result.isThreat) {
       await chrome.storage.local.set({ [`threat_${tabId}`]: result });
 
-      // Block if threat detected and blocking enabled
+      // Add dynamic rule for future visits (proactive block on next navigation)
       if (shouldBlock(result.severity)) {
+        await addThreatBlockRule(url, result);
         redirectToBlockedPage(tabId, url, result);
       }
     } else {
@@ -191,6 +239,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === 'allowlistUrl') {
     allowlistedUrls.add(request.url);
+    removeThreatBlockRule(request.url);
     sendResponse({ success: true });
   }
 

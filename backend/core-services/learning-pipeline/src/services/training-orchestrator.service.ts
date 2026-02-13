@@ -62,7 +62,7 @@ export class TrainingOrchestratorService {
         { name: 'DATASET_PATH', value: config.datasetPath },
         { name: 'TRAINING_JOB_ID', value: savedJob.id },
         { name: 'S3_BUCKET_MODELS', value: process.env.S3_BUCKET_MODELS || 'phishing-detection-models-dev' },
-        { name: 'S3_BUCKET_TRAINING', value: process.env.S3_BUCKET_TRAINING || 'phishing-detection-training-dev' },
+        { name: 'S3_BUCKET_TRAINING', value: process.env.S3_BUCKET_TRAINING || 'phishing-detection-training-data-dev' },
         { name: 'AWS_REGION', value: process.env.AWS_REGION || 'us-east-1' },
       ];
 

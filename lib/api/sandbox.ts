@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '../api-client';
+import { apiGet, apiPost, getApiBaseUrl } from '../api-client';
 
 export interface SandboxAnalysis {
   analysis_id: string;
@@ -51,8 +51,6 @@ export async function submitFileForAnalysis(file: File): Promise<SandboxSubmissi
   
   // Use axios directly for file uploads to handle FormData properly
   const axios = (await import('axios')).default;
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-  
   const apiKey = typeof window !== 'undefined' ? localStorage.getItem('api_key') : null;
   const headers: Record<string, string> = {};
   if (apiKey) {
@@ -60,7 +58,7 @@ export async function submitFileForAnalysis(file: File): Promise<SandboxSubmissi
   }
   
   const response = await axios.post<SandboxSubmissionResponse>(
-    `${API_URL}/api/v1/sandbox/analyze/file`,
+    `${getApiBaseUrl()}/api/v1/sandbox/analyze/file`,
     formData,
     {
       headers,

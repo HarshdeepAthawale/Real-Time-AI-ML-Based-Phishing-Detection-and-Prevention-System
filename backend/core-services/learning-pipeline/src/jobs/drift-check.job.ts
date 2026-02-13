@@ -1,4 +1,5 @@
 import cron from 'node-cron';
+import { config } from '../../../../shared/config';
 import { DriftDetectorService, DriftResult } from '../services/drift-detector.service';
 import { TrainingOrchestratorService } from '../services/training-orchestrator.service';
 import { DataCollectorService } from '../services/data-collector.service';
@@ -98,7 +99,7 @@ export class DriftCheckJob {
             }
 
             const timestamp = Date.now();
-            const datasetPath = `s3://phishing-detection-training/training-data/combined/${timestamp}`;
+            const datasetPath = `s3://${config.aws.s3.training}/training-data/combined/${timestamp}`;
 
             logger.info(`Triggering retraining for model ${modelId} (type: ${modelType})`, {
               driftScore: result.driftScore,

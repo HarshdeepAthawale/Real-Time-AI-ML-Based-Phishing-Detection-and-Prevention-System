@@ -34,6 +34,7 @@ class URLAnalysisResponse(BaseModel):
     """Response model for URL analysis"""
     url: str
     is_malicious: bool
+    is_suspicious: bool = False  # Composite: obfuscation, homoglyph, redirect, or heuristic score
     malicious_probability: float
     confidence: float
     url_components: Dict

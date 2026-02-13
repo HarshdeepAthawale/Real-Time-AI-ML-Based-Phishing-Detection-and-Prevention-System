@@ -58,10 +58,13 @@ def _compute_phishing_probability(
     score += rep_phishing * 0.30
     weight_total += 0.30
 
-    # Obfuscation score
+    # Obfuscation score (strengthened - key indicator for phishing URLs)
     obf_score = obfuscation_analysis.get("obfuscation_score", 0.0)
-    score += obf_score * 0.25
-    weight_total += 0.25
+    obf_techniques = len(obfuscation_analysis.get("techniques_detected", []))
+    # Base obfuscation + bonus for multiple techniques detected
+    obf_contribution = min(1.0, obf_score * 1.1 + obf_techniques * 0.05)
+    score += obf_contribution * 0.30
+    weight_total += 0.30
 
     # Redirect analysis
     if redirect_analysis:
@@ -169,11 +172,21 @@ async def analyze_url(request: URLAnalysisRequest):
             malicious_probability
         )
 
+        # Composite is_suspicious: obfuscation, homoglyph, suspicious redirect, or high heuristic score
+        is_suspicious = (
+            obfuscation_analysis.get("is_obfuscated", False)
+            or (homoglyph_analysis or {}).get("is_suspicious", False)
+            or (redirect_analysis or {}).get("is_suspicious", False)
+            or reputation_result.get("risk_level", "low") in ("high", "critical")
+            or phishing_probability >= 0.5
+        )
+
         processing_time = (time.time() - start_time) * 1000
 
         response = URLAnalysisResponse(
             url=request.url,
             is_malicious=phishing_probability > 0.5,
+            is_suspicious=is_suspicious,
             malicious_probability=malicious_probability,
             confidence=abs(phishing_probability - 0.5) * 2,
             url_components=url_components,

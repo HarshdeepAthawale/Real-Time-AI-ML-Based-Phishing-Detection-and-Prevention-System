@@ -1,22 +1,30 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import { ApiError } from './types/api';
 
-// Get API URL from environment variable or use default
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+// Get API URL from env (build-time) or localStorage (runtime override)
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-// Create axios instance with default configuration
+export function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('api_url');
+    if (stored?.trim()) return stored.trim();
+  }
+  return DEFAULT_API_URL;
+}
+
+// Create axios instance - baseURL set per-request via interceptor for runtime override
 const apiClient: AxiosInstance = axios.create({
-  baseURL: API_URL,
+  baseURL: DEFAULT_API_URL,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor - Add auth token if available
+// Request interceptor - Add auth token and runtime API URL override
 apiClient.interceptors.request.use(
   (config) => {
-    // Add API key from localStorage if available
+    config.baseURL = getApiBaseUrl();
     const apiKey = typeof window !== 'undefined' ? localStorage.getItem('api_key') : null;
     if (apiKey) {
       config.headers['X-API-Key'] = apiKey;

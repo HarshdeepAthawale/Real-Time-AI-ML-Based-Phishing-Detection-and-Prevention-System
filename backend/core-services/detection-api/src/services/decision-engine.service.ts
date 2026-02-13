@@ -62,11 +62,14 @@ export class DecisionEngineService {
     if (mlResponse.url) {
       const urlData = Array.isArray(mlResponse.url) ? mlResponse.url[0] : mlResponse.url;
 
-      // Use direct phishing_probability if available
+      // Use direct phishing_probability if available (from heuristic ensemble)
       if (urlData.phishing_probability !== undefined) {
         scores.url = urlData.phishing_probability;
       } else {
         // Combine multiple URL analysis results
+        if (urlData.is_suspicious) {
+          scores.url += 0.4;
+        }
         if (urlData.domain_analysis?.is_suspicious) {
           scores.url += 0.3;
         }

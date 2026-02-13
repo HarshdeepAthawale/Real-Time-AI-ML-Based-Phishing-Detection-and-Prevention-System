@@ -57,7 +57,7 @@ const getConfig = (): Config => {
       region: process.env.AWS_REGION || 'us-east-1',
       s3: {
         models: process.env.S3_BUCKET_MODELS || 'phishing-detection-models-dev',
-        training: process.env.S3_BUCKET_TRAINING || 'phishing-detection-training-dev',
+        training: process.env.S3_BUCKET_TRAINING || 'phishing-detection-training-data-dev',
         logs: process.env.S3_BUCKET_LOGS || 'phishing-detection-logs-dev',
         artifacts: process.env.S3_BUCKET_ARTIFACTS || 'phishing-detection-artifacts-dev',
       },

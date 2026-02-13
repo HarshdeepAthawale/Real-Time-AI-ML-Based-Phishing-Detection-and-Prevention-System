@@ -1,12 +1,14 @@
 # Development Environment Variables
 # Copy this file to dev.tfvars and fill in the values
+# IMPORTANT: Prefer setting db_password via TF_VAR_db_password (never commit passwords)
+# See backend/infrastructure/terraform/BOOTSTRAP.md for details
 
-aws_region        = "us-east-1"
+aws_region        = "ap-south-1"
 environment       = "dev"
-availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+availability_zones = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
 
-# Database
-db_password       = "CHANGE_ME_STRONG_PASSWORD"
+# Database - Set via TF_VAR_db_password or add below (do not commit)
+# db_password     = "CHANGE_ME_STRONG_PASSWORD"
 db_instance_class = "db.t3.medium"
 
 # Redis

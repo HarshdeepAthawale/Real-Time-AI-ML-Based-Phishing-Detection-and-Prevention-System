@@ -3,6 +3,25 @@
 ## Prerequisites
 
 - Docker and Docker Compose v2+
+- AWS account (for production and CI/CD)
+
+---
+
+## 0. GitHub Repository Secrets (CI/CD)
+
+For the backend CI/CD pipeline to build, push images, and deploy, configure these secrets in your GitHub repository (**Settings → Secrets and variables → Actions**):
+
+| Secret | Description | Required For |
+|--------|-------------|--------------|
+| `AWS_ACCESS_KEY_ID` | IAM user access key for ECR, S3, ECS | Docker push, Terraform, ECS deploy |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key | Docker push, Terraform, ECS deploy |
+| `AWS_ACCOUNT_ID` | AWS account ID (12 digits) | ECR login |
+| `TF_VAR_DB_PASSWORD` | RDS master password for dev | Terraform plan/apply (dev) |
+| `TF_VAR_DB_PASSWORD_PROD` | RDS master password for prod | Terraform apply (prod) |
+
+Without these secrets, the `build-docker-images`, `terraform-plan`, `deploy-dev`, and `deploy-prod` jobs will fail.
+
+---
 - Node.js 18+ and npm
 - Python 3.10+
 - AWS account (for production: S3, ECS, CloudWatch)
@@ -85,7 +104,20 @@
 
 ---
 
-## 2. Local Development Setup
+## 2. Smoke Test
+
+After starting the stack, run the smoke test to validate the detection flow:
+
+```bash
+# Ensure services are running (docker compose up)
+chmod +x scripts/smoke-test.sh
+./scripts/smoke-test.sh http://localhost:3000 $TEST_API_KEY
+# Or if using detection-api directly: ./scripts/smoke-test.sh http://localhost:3001 $TEST_API_KEY
+```
+
+---
+
+## 3. Local Development Setup
 
 ```bash
 # Clone and install

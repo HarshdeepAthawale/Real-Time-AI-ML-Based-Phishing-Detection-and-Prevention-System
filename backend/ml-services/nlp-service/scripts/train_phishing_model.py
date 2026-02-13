@@ -60,6 +60,40 @@ class PhishingDataset(Dataset):
         }
 
 
+def load_minimal_fallback_dataset() -> List[Tuple[str, int]]:
+    """Minimal built-in dataset for testing when no external data is available."""
+    samples = [
+        # Phishing (label=1)
+        ("Urgent: Your account will be suspended. Click here to verify: http://fake-bank-login.xyz", 1),
+        ("You won a prize! Send your credit card to claim. Reply immediately.", 1),
+        ("Dear customer, we detected unusual activity. Verify at amaz0n-secure.xyz now.", 1),
+        ("IRS refund waiting. Submit SSN and bank details at irs-refund-2024.xyz", 1),
+        ("Your PayPal has been limited. Click to unlock: paypa1-verify.xyz", 1),
+        ("Microsoft: Your license expired. Activate at microsoft-activate.xyz", 1),
+        ("FedEx: Package held. Pay clearance fee at fedex-delivery-pay.xyz", 1),
+        ("Netflix: Update payment. Your subscription will be cancelled. netflix-billing.xyz", 1),
+        ("Apple ID locked. Unlock now: apple-id-verify.xyz or lose access permanently.", 1),
+        ("Google: Sign-in attempt blocked. Confirm at g00gle-secure.xyz", 1),
+        # Legitimate (label=0)
+        ("Your order #12345 has shipped. Track at ups.com with tracking 1Z999AA10123456784.", 0),
+        ("Reminder: Your meeting with John is tomorrow at 2 PM. Conference room B.", 0),
+        ("Thanks for your submission. We will review and get back within 3 business days.", 0),
+        ("The report is attached. Please review and let me know if you have questions.", 0),
+        ("Your subscription to our newsletter is confirmed. Unsubscribe link in footer.", 0),
+        ("Password reset requested. If this wasn't you, ignore this email.", 0),
+        ("Your package was delivered. Leave feedback at amazon.com/feedback", 0),
+        ("Invoice #INV-2024-001 is due on Feb 15. Pay at yourcompany.com/billing", 0),
+        ("Team standup moved to 10 AM. Calendar updated.", 0),
+        ("Your application has been received. We'll contact you within a week.", 0),
+    ]
+    # Duplicate to get more samples for minimal training
+    expanded = []
+    for _ in range(20):
+        expanded.extend(samples)
+    print(f"Using minimal fallback dataset ({len(expanded)} samples)")
+    return expanded
+
+
 def load_huggingface_dataset() -> List[Tuple[str, int]]:
     """Load phishing email dataset from Hugging Face datasets hub."""
     try:
@@ -93,12 +127,17 @@ def load_huggingface_dataset() -> List[Tuple[str, int]]:
                 print(f"  Could not load {ds_name}: {e}")
                 continue
 
-        print("No Hugging Face datasets available. Using external CSV or raising error.")
+        print("No Hugging Face datasets available.")
         return []
 
     except ImportError:
         print("Hugging Face datasets library not installed. Install with: pip install datasets")
         return []
+
+
+def load_fallback_dataset() -> List[Tuple[str, int]]:
+    """Use minimal built-in dataset when Hugging Face and external CSV have no data."""
+    return load_minimal_fallback_dataset()
 
 
 def load_external_dataset(dataset_path: str) -> List[Tuple[str, int]]:
@@ -143,13 +182,10 @@ def prepare_data(
         ext = load_external_dataset(external_csv)
         all_samples.extend(ext)
 
+    # 3. Fallback to minimal built-in dataset for quick testing
     if len(all_samples) == 0:
-        raise ValueError(
-            "No training data available. Provide a dataset via:\n"
-            "  --external-csv path/to/dataset.csv\n"
-            "  Or install 'datasets' library: pip install datasets\n"
-            "  CSV format: text,label (label: 0=legitimate, 1=phishing)"
-        )
+        all_samples = load_fallback_dataset()
+        print("Using minimal built-in dataset. For production, use --external-csv or Hugging Face datasets.")
 
     random.shuffle(all_samples)
     texts = [s[0] for s in all_samples]
@@ -333,7 +369,11 @@ def save_model(model, tokenizer, output_dir: str, metrics: Dict, base_model: str
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train phishing classifier")
     parser.add_argument("--model-name", default="distilbert-base-uncased")
-    parser.add_argument("--output-dir", default="models/phishing-detector")
+    default_output = os.path.join(
+        os.getenv("MODEL_DIR", "models"),
+        "phishing-detector"
+    )
+    parser.add_argument("--output-dir", default=default_output)
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=2e-5)

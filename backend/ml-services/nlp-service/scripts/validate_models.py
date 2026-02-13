@@ -4,14 +4,22 @@ Runs detections against labeled test sets and reports TPR, FPR, precision, recal
 Outputs results for ModelPerformance tracking and drift detection.
 
 Usage:
+    # Validate local model
     python scripts/validate_models.py --model-dir models/phishing-detector --output results/
+
+    # Validate via detection API (full stack)
+    python scripts/validate_models.py --api-url http://localhost:3000/api/v1/detect/text --api-key YOUR_KEY
+
+    # CI mode: parseable output, exits with code 1 if targets not met
+    CI=1 python scripts/validate_models.py --model-dir models/phishing-detector
 """
 import os
 import json
 import time
 import argparse
+import sys
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -60,6 +68,10 @@ VALIDATION_SET: List[Tuple[str, int]] = [
     ("The project retrospective meeting is at 2 PM today in Room 301. Snacks provided!", 0),
     ("Your credit card statement is ready to view. Current balance: $1,234.56.", 0),
     ("Welcome to the team! Your desk is in Section C, Row 3. IT will set up your laptop today.", 0),
+    ("Your flight LH 456 has been confirmed. Boarding at Gate 12, departs 14:30.", 0),
+    ("Quarterly report attached. Revenue up 12% YoY. Please review before the board meeting.", 0),
+    ("Phishing attempt: 'Click here to claim your prize at fake-giveaway.xyz' - obvious scam.", 0),
+    ("IRS refund scam: 'You owe $0. Update at irs-fake.gov' - do not click.", 1),
 ]
 
 
@@ -136,6 +148,68 @@ def compute_metrics(labels: List[int], predictions: List[int], probabilities: Li
         "phishing_samples": sum(labels),
         "legitimate_samples": len(labels) - sum(labels),
     }
+
+
+def validate_via_api(
+    api_url: str,
+    api_key: str,
+    output_dir: str = "results",
+) -> Dict:
+    """Validate by calling detection API (full-stack validation)."""
+    try:
+        import requests
+    except ImportError:
+        print("Error: requests library required for API validation. pip install requests")
+        sys.exit(1)
+
+    texts = [s[0] for s in VALIDATION_SET]
+    labels = [s[1] for s in VALIDATION_SET]
+    predictions = []
+    probabilities = []
+    latencies = []
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+
+    for text in texts:
+        start = time.time()
+        try:
+            resp = requests.post(
+                api_url,
+                json={"text": text},
+                headers=headers,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            # Detection API returns analysis_result.nlp.phishing_probability or similar
+            nlp = (data.get("analysis_result") or {}).get("nlp") or data.get("nlp") or {}
+            prob = nlp.get("phishing_probability", 0.5)
+            probabilities.append(prob)
+            predictions.append(1 if prob > 0.5 else 0)
+        except Exception as e:
+            print(f"API error: {e}")
+            probabilities.append(0.5)
+            predictions.append(0)
+        latencies.append((time.time() - start) * 1000)
+
+    metrics = compute_metrics(labels, predictions, probabilities)
+    metrics["latency"] = {
+        "p50_ms": round(float(np.percentile(latencies, 50)), 2),
+        "p95_ms": round(float(np.percentile(latencies, 95)), 2),
+        "p99_ms": round(float(np.percentile(latencies, 99)), 2),
+        "mean_ms": round(float(np.mean(latencies)), 2),
+    }
+    metrics["targets"] = {
+        "tpr_target": 0.95,
+        "tpr_met": metrics["tpr"] >= 0.95,
+        "fpr_target": 0.02,
+        "fpr_met": metrics["fpr"] <= 0.02,
+        "latency_target_ms": 100,
+        "latency_met": metrics["latency"]["p95_ms"] <= 100,
+    }
+    return metrics
 
 
 def validate(model_dir: str, output_dir: str = "results", device: str = "cpu"):
@@ -221,11 +295,46 @@ def validate(model_dir: str, output_dir: str = "results", device: str = "cpu"):
     return metrics
 
 
+def print_ci_summary(metrics: Dict):
+    """Print parseable one-line summary for CI."""
+    tpr = metrics.get("tpr", 0)
+    fpr = metrics.get("fpr", 0)
+    f1 = metrics.get("f1", 0)
+    p95 = metrics.get("latency", {}).get("p95_ms", 0)
+    passed = (
+        metrics.get("targets", {}).get("tpr_met", False)
+        and metrics.get("targets", {}).get("fpr_met", False)
+    )
+    print(
+        f"TPR={tpr:.4f} FPR={fpr:.4f} F1={f1:.4f} p95_ms={p95:.1f} PASS={passed}"
+    )
+    if not passed:
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Validate phishing detection models")
     parser.add_argument("--model-dir", default="models/phishing-detector")
     parser.add_argument("--output", default="results")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--api-url", default=None, help="Validate via detection API instead of local model")
+    parser.add_argument("--api-key", default=os.getenv("API_KEY", ""), help="API key for detection API")
+    parser.add_argument("--ci", action="store_true", help="CI mode: parseable output, exit 1 if targets not met")
     args = parser.parse_args()
 
-    validate(args.model_dir, args.output, args.device)
+    if args.api_url:
+        metrics = validate_via_api(args.api_url, args.api_key, args.output)
+        print("\n" + "=" * 60)
+        print("VALIDATION REPORT (via API)")
+        print("=" * 60)
+        print(f"  TPR: {metrics['tpr']:.4f} (target: >= 0.95) {'PASS' if metrics['targets']['tpr_met'] else 'FAIL'}")
+        print(f"  FPR: {metrics['fpr']:.4f} (target: <= 0.02) {'PASS' if metrics['targets']['fpr_met'] else 'FAIL'}")
+        print(f"  F1:  {metrics['f1']:.4f}")
+        print(f"  Latency p95: {metrics['latency']['p95_ms']:.1f}ms")
+        print("=" * 60)
+        if args.ci or os.getenv("CI"):
+            print_ci_summary(metrics)
+    else:
+        metrics = validate(args.model_dir, args.output, args.device)
+        if args.ci or os.getenv("CI"):
+            print_ci_summary(metrics)

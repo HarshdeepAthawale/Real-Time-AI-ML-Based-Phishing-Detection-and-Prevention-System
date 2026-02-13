@@ -19,14 +19,25 @@ import { DriftCheckJob } from './jobs/drift-check.job';
 
 dotenv.config();
 
+/**
+ * Check if AWS is configured for S3/ECS operations.
+ * AWS is considered enabled when AWS_ACCESS_KEY_ID is set, or AWS_ENABLED=true
+ */
+function isAwsEnabled(): boolean {
+  const explicit = process.env.AWS_ENABLED?.toLowerCase();
+  if (explicit === 'true' || explicit === '1') return true;
+  if (explicit === 'false' || explicit === '0') return false;
+  return Boolean(process.env.AWS_ACCESS_KEY_ID);
+}
+
 // Global service instances
-let dataCollector: DataCollectorService;
-let featureStore: FeatureStoreService;
-let trainingOrchestrator: TrainingOrchestratorService;
-let validator: ValidatorService;
+let dataCollector: DataCollectorService | null = null;
+let featureStore: FeatureStoreService | null = null;
+let trainingOrchestrator: TrainingOrchestratorService | null = null;
+let validator: ValidatorService | null = null;
 let driftDetector: DriftDetectorService;
-let deployment: DeploymentService;
-let scheduledTrainingJob: ScheduledTrainingJob;
+let deployment: DeploymentService | null = null;
+let scheduledTrainingJob: ScheduledTrainingJob | null = null;
 let driftCheckJob: DriftCheckJob;
 
 /**
@@ -42,38 +53,53 @@ async function initializeServices(): Promise<void> {
     await connectAllDatabases();
     logger.info('Databases connected');
 
-    // Initialize AWS clients
-    logger.info('Initializing AWS clients...');
-    const s3Client = new S3Client({
-      region: config.aws.region,
-    });
-
-    const ecsClient = new ECSClient({
-      region: config.aws.region,
-    });
-    logger.info('AWS clients initialized');
-
-    // Initialize services
-    logger.info('Initializing services...');
-    dataCollector = new DataCollectorService(dataSource, s3Client);
-    featureStore = new FeatureStoreService(s3Client);
-    trainingOrchestrator = new TrainingOrchestratorService(ecsClient, dataSource);
-    validator = new ValidatorService(s3Client, dataSource);
+    // Drift detector is always initialized (DB-backed only)
     driftDetector = new DriftDetectorService(dataSource);
-    deployment = new DeploymentService(s3Client, ecsClient, dataSource);
 
-    // Initialize jobs
-    scheduledTrainingJob = new ScheduledTrainingJob(
-      dataCollector,
-      featureStore,
-      trainingOrchestrator,
-      validator,
-      deployment
-    );
+    const awsEnabled = isAwsEnabled();
 
-    driftCheckJob = new DriftCheckJob(driftDetector);
+    if (awsEnabled) {
+      // Initialize AWS clients
+      logger.info('Initializing AWS clients...');
+      const s3Client = new S3Client({
+        region: config.aws.region,
+      });
 
-    logger.info('All services initialized successfully');
+      const ecsClient = new ECSClient({
+        region: config.aws.region,
+      });
+      logger.info('AWS clients initialized');
+
+      // Initialize AWS-dependent services
+      dataCollector = new DataCollectorService(dataSource, s3Client);
+      featureStore = new FeatureStoreService(s3Client);
+      trainingOrchestrator = new TrainingOrchestratorService(ecsClient, dataSource);
+      validator = new ValidatorService(s3Client, dataSource);
+      deployment = new DeploymentService(s3Client, ecsClient, dataSource);
+
+      // Initialize scheduled training job (requires AWS)
+      scheduledTrainingJob = new ScheduledTrainingJob(
+        dataCollector,
+        featureStore,
+        trainingOrchestrator,
+        validator,
+        deployment
+      );
+
+      // Drift check with optional retraining (requires trainingOrchestrator + dataCollector)
+      driftCheckJob = new DriftCheckJob(driftDetector, trainingOrchestrator, dataCollector);
+
+      logger.info('All services initialized successfully (AWS mode)');
+    } else {
+      // Local mode: no S3/ECS, drift detector only
+      logger.info('Learning pipeline running in local mode - S3/ECS disabled');
+      logger.info('Set AWS_ACCESS_KEY_ID or AWS_ENABLED=true to enable training pipeline');
+
+      // Drift check without retraining (DB-only)
+      driftCheckJob = new DriftCheckJob(driftDetector);
+
+      logger.info('Services initialized (local mode - drift detection only)');
+    }
   } catch (error: any) {
     logger.error(`Failed to initialize services: ${error.message}`, error);
     throw error;
@@ -85,10 +111,15 @@ async function initializeServices(): Promise<void> {
  */
 function startScheduledJobs(): void {
   logger.info('Starting scheduled jobs...');
-  
-  scheduledTrainingJob.start();
+
+  if (scheduledTrainingJob) {
+    scheduledTrainingJob.start();
+  } else {
+    logger.info('Scheduled training job skipped (AWS not configured)');
+  }
+
   driftCheckJob.start();
-  
+
   logger.info('Scheduled jobs started');
 }
 
@@ -97,14 +128,14 @@ function startScheduledJobs(): void {
  */
 async function shutdown(): Promise<void> {
   logger.info('Shutting down Learning Pipeline service...');
-  
+
   try {
     await disconnectAllDatabases();
     logger.info('Databases disconnected');
   } catch (error: any) {
     logger.error(`Error during shutdown: ${error.message}`, error);
   }
-  
+
   process.exit(0);
 }
 
@@ -115,9 +146,13 @@ async function main(): Promise<void> {
   try {
     logger.info('Learning Pipeline service starting...');
     logger.info(`Environment: ${config.environment}`);
-    logger.info(`AWS Region: ${config.aws.region}`);
-    logger.info(`S3 Training Bucket: ${config.aws.s3.training}`);
-    logger.info(`S3 Models Bucket: ${config.aws.s3.models}`);
+    logger.info(`AWS enabled: ${isAwsEnabled()}`);
+
+    if (isAwsEnabled()) {
+      logger.info(`AWS Region: ${config.aws.region}`);
+      logger.info(`S3 Training Bucket: ${config.aws.s3.training}`);
+      logger.info(`S3 Models Bucket: ${config.aws.s3.models}`);
+    }
 
     // Initialize services
     await initializeServices();
@@ -139,7 +174,6 @@ async function main(): Promise<void> {
       // Health check - log status periodically
       logger.debug('Learning Pipeline service is running');
     }, 60000); // Every minute
-
   } catch (error: any) {
     logger.error(`Failed to start Learning Pipeline service: ${error.message}`, error);
     process.exit(1);

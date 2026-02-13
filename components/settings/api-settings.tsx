@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Key, Eye, EyeOff, Copy, Check } from 'lucide-react'
+import { Key, Eye, EyeOff, Copy, Check, Globe } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,28 +9,32 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useToast } from '@/hooks/use-toast'
 
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+
 export function ApiSettings() {
   const [apiKey, setApiKey] = useState('')
+  const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL)
   const [showKey, setShowKey] = useState(false)
   const [copied, setCopied] = useState(false)
   const { toast } = useToast()
 
-  // Load API key from localStorage on mount
+  // Load API key and URL from localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('api_key')
-      if (stored) {
-        setApiKey(stored)
-      }
+      const storedKey = localStorage.getItem('api_key')
+      if (storedKey) setApiKey(storedKey)
+      const storedUrl = localStorage.getItem('api_url')
+      if (storedUrl) setApiUrl(storedUrl)
     }
   }, [])
 
   const handleSave = () => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('api_key', apiKey)
+      localStorage.setItem('api_url', apiUrl.trim() || DEFAULT_API_URL)
       toast({
-        title: 'API Key Saved',
-        description: 'Your API key has been saved successfully.',
+        title: 'Settings Saved',
+        description: 'API URL and key have been saved. Refresh the page for URL changes to take effect.',
       })
     }
   }
@@ -59,6 +63,23 @@ export function ApiSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="apiUrl">API Base URL</Label>
+          <div className="flex gap-2 items-center">
+            <Globe className="w-4 h-4 text-muted-foreground" />
+            <Input
+              id="apiUrl"
+              type="url"
+              value={apiUrl}
+              onChange={(e) => setApiUrl(e.target.value)}
+              placeholder="http://localhost:3000"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Backend API gateway or detection API URL (e.g. http://localhost:3000)
+          </p>
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="apiKey">API Key</Label>
           <div className="flex gap-2">
