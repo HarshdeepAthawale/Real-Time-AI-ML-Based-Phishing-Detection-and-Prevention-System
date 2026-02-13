@@ -42,6 +42,23 @@ export interface SandboxSubmissionResponse {
   message: string;
 }
 
+export interface SandboxStatus {
+  sandboxEnabled: boolean;
+  provider: string;
+  message?: string;
+}
+
+/**
+ * Get sandbox service status (enabled/disabled)
+ */
+export async function getSandboxStatus(): Promise<SandboxStatus> {
+  try {
+    return await apiGet<SandboxStatus>('/api/v1/sandbox/status');
+  } catch {
+    return { sandboxEnabled: false, provider: 'unknown', message: 'Unable to reach sandbox service' };
+  }
+}
+
 /**
  * Submit a file for sandbox analysis
  */

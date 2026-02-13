@@ -37,8 +37,8 @@ export class OTXClient {
   private enabled: boolean;
   private baseUrl = 'https://otx.alienvault.com';
 
-  constructor() {
-    this.apiKey = process.env.OTX_API_KEY || '';
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey || process.env.OTX_API_KEY || '';
     this.enabled = Boolean(this.apiKey);
 
     if (!this.enabled) {

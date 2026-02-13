@@ -1,0 +1,15 @@
+# Frontend build context - exclude everything not needed for Next.js
+.git
+.gitignore
+.github
+backend
+extensions
+docs
+*.md
+.env*
+!.env.example
+node_modules
+.next
+out
+.cursor
+*.plan.md

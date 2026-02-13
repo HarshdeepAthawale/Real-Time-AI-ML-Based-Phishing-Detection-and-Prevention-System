@@ -14,7 +14,7 @@ router.get('/timeline',
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { start_date, end_date, interval = 'day' } = req.query;
-      const organizationId = req.user?.organizationId;
+      const organizationId = req.organizationId;
 
       if (!organizationId) {
         return res.status(400).json({ error: 'Organization ID required' });
@@ -45,7 +45,7 @@ router.get('/distribution',
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = req.organizationId;
 
       if (!organizationId) {
         return res.status(400).json({ error: 'Organization ID required' });
@@ -68,7 +68,7 @@ router.get('/performance',
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = req.organizationId;
 
       if (!organizationId) {
         return res.status(400).json({ error: 'Organization ID required' });
@@ -92,7 +92,7 @@ router.get('/trends',
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { days = 30 } = req.query;
-      const organizationId = req.user?.organizationId;
+      const organizationId = req.organizationId;
 
       if (!organizationId) {
         return res.status(400).json({ error: 'Organization ID required' });
@@ -119,7 +119,7 @@ router.get('/top-threats',
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { limit = 10 } = req.query;
-      const organizationId = req.user?.organizationId;
+      const organizationId = req.organizationId;
 
       if (!organizationId) {
         return res.status(400).json({ error: 'Organization ID required' });
@@ -145,7 +145,7 @@ router.get('/accuracy',
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = req.organizationId;
 
       if (!organizationId) {
         return res.status(400).json({ error: 'Organization ID required' });
@@ -169,7 +169,7 @@ router.get('/hourly-distribution',
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { days = 7 } = req.query;
-      const organizationId = req.user?.organizationId;
+      const organizationId = req.organizationId;
 
       if (!organizationId) {
         return res.status(400).json({ error: 'Organization ID required' });
@@ -195,7 +195,7 @@ router.get('/ml-performance',
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = req.organizationId;
 
       if (!organizationId) {
         return res.status(400).json({ error: 'Organization ID required' });

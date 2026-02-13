@@ -1,0 +1,21 @@
+# Root docker-compose: frontend + backend services
+# Run from project root: docker compose up --build
+
+include:
+  - backend/docker-compose.yml
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-http://localhost:3000}
+    ports:
+      - "3080:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - api-gateway
+    restart: unless-stopped

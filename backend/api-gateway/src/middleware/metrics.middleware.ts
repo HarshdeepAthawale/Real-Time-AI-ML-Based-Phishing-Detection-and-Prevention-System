@@ -131,7 +131,7 @@ export class MetricsCollector {
     // Calculate error rate
     const errorData = await this.redis.hgetall(`${key}:errors:${targetDate}`);
     const totalErrors = Object.values(errorData).reduce(
-      (sum, count) => sum + parseInt(count as string), 
+      (sum: number, count: string | number) => sum + (typeof count === 'string' ? parseInt(count, 10) : Number(count)), 
       0
     );
     const errorRate = totalRequests > 0 ? (totalErrors / totalRequests) * 100 : 0;

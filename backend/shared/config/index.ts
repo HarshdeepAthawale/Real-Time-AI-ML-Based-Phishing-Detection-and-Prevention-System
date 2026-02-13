@@ -64,8 +64,8 @@ const getConfig = (): Config => {
     },
     services: {
       nlp: process.env.NLP_SERVICE_URL || 'http://localhost:8000',
-      url: process.env.URL_SERVICE_URL || 'http://localhost:8000',
-      visual: process.env.VISUAL_SERVICE_URL || 'http://localhost:8000',
+      url: process.env.URL_SERVICE_URL || 'http://localhost:8001',
+      visual: process.env.VISUAL_SERVICE_URL || 'http://localhost:8002',
       detectionApi: process.env.DETECTION_API_URL || 'http://localhost:3001',
       threatIntel: process.env.THREAT_INTEL_URL || 'http://localhost:3002',
     },

@@ -9,6 +9,7 @@ import Navigation from '@/components/navigation'
 import { EmailDetector } from '@/components/detection/email-detector'
 import { URLDetector } from '@/components/detection/url-detector'
 import { TextDetector } from '@/components/detection/text-detector'
+import { ApiKeyBanner } from '@/components/api-key-banner'
 import { Spinner } from '@/components/ui/loading'
 
 function DetectionContent() {
@@ -24,6 +25,7 @@ function DetectionContent() {
 
   return (
     <div className="p-6 space-y-6">
+      <ApiKeyBanner />
       {/* Header */}
       <div>
         <div className="flex items-center gap-3">

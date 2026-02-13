@@ -1,13 +1,13 @@
 /**
  * REAL Integration Tests - Detection Pipeline
- * 
+ *
  * These tests make ACTUAL API calls to running services.
  * NO MOCKS - tests the real system end-to-end.
- * 
+ *
  * Prerequisites:
  * - All services must be running (docker-compose up)
- * - Database must be initialized
- * - Valid API key must exist
+ * - Database must be initialized (003_seed_api_key.sql seeds TEST_API_KEY)
+ * - Valid API key: use TEST_API_KEY=testkey_smoke_test_12345 or create via setup script
  */
 
 import axios from 'axios';
@@ -15,17 +15,18 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// Real service URLs
+// Real service URLs (match backend/docker-compose.yml ports)
 const DETECTION_API = process.env.DETECTION_API_URL || 'http://localhost:3001';
 const THREAT_INTEL_API = process.env.THREAT_INTEL_URL || 'http://localhost:3002';
-const NLP_SERVICE = process.env.NLP_SERVICE_URL || 'http://localhost:8001';
-const URL_SERVICE = process.env.URL_SERVICE_URL || 'http://localhost:8002';
+const NLP_SERVICE = process.env.NLP_SERVICE_URL || 'http://localhost:8000';
+const URL_SERVICE = process.env.URL_SERVICE_URL || 'http://localhost:8001';
+const VISUAL_SERVICE = process.env.VISUAL_SERVICE_URL || 'http://localhost:8002';
 
-// Real API key (must be created via setup script)
-const API_KEY = process.env.TEST_API_KEY;
+// Real API key: seeded by 003_seed_api_key.sql as testkey_smoke_test_12345
+const API_KEY =
+  process.env.TEST_API_KEY || 'testkey_smoke_test_12345';
 
 describe('Detection Pipeline - Real Integration Tests', () => {
-  
   beforeAll(async () => {
     // Wait for services to be ready
     console.log('⏳ Waiting for services to be ready...');
@@ -57,6 +58,12 @@ describe('Detection Pipeline - Real Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(response.data.status).toBe('healthy');
     });
+
+    test('Visual Service should be healthy', async () => {
+      const response = await axios.get(`${VISUAL_SERVICE}/health`);
+      expect(response.status).toBe(200);
+      expect(response.data.status).toBe('healthy');
+    });
   });
 
   describe('URL Detection - Real Analysis', () => {
@@ -78,7 +85,7 @@ describe('Detection Pipeline - Real Integration Tests', () => {
       expect(response.data).toHaveProperty('scores');
       expect(response.data.is_threat).toBe(false);
       expect(response.data.confidence).toBeLessThan(0.5);
-      
+
       // Verify real ML scores
       expect(response.data.scores).toHaveProperty('nlp');
       expect(response.data.scores).toHaveProperty('url');
@@ -101,7 +108,7 @@ describe('Detection Pipeline - Real Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(response.data.is_threat).toBe(true);
       expect(response.data.confidence).toBeGreaterThan(0.5);
-      
+
       // Should have real indicators
       expect(response.data.indicators).toBeDefined();
       expect(Array.isArray(response.data.indicators)).toBe(true);
@@ -120,15 +127,15 @@ describe('Detection Pipeline - Real Integration Tests', () => {
       expect(response.data).toHaveProperty('dns');
       expect(response.data).toHaveProperty('ssl');
       expect(response.data).toHaveProperty('whois');
-      
+
       // Verify real DNS records
       expect(response.data.dns.has_dns).toBe(true);
       expect(response.data.dns.a_records.length).toBeGreaterThan(0);
-      
+
       // Verify real SSL certificate
       expect(response.data.ssl.has_ssl).toBe(true);
       expect(response.data.ssl.certificate_valid).toBe(true);
-      
+
       // Verify real WHOIS data
       expect(response.data.whois.has_whois).toBe(true);
       expect(response.data.whois.domain_age_days).toBeGreaterThan(0);
@@ -142,7 +149,7 @@ URGENT: Your account will be suspended!
 
 Dear valued customer,
 
-We detected suspicious activity on your account. 
+We detected suspicious activity on your account.
 You must verify your identity immediately or your account will be locked.
 
 Click here to verify: http://verify-account-now.tk/login.php
@@ -167,7 +174,7 @@ Security Team
       expect(response.status).toBe(200);
       expect(response.data.is_threat).toBe(true);
       expect(response.data.confidence).toBeGreaterThan(0.7);
-      
+
       // Should detect urgency keywords
       const indicators = response.data.indicators.join(' ');
       expect(indicators.toLowerCase()).toMatch(/urgent|suspicious|verify|immediately/);
@@ -237,7 +244,7 @@ Team Lead
   describe('End-to-End Detection Flow', () => {
     test('Complete detection pipeline with all services', async () => {
       const testURL = 'http://suspicious-phishing-test.example.com';
-      
+
       // Step 1: Submit for detection
       const detectionResponse = await axios.post(
         `${DETECTION_API}/api/v1/detect/url`,
@@ -251,7 +258,7 @@ Team Lead
       );
 
       expect(detectionResponse.status).toBe(200);
-      
+
       // Step 2: Verify result structure
       const result = detectionResponse.data;
       expect(result).toHaveProperty('detection_id');
@@ -259,17 +266,17 @@ Team Lead
       expect(result).toHaveProperty('confidence');
       expect(result).toHaveProperty('scores');
       expect(result).toHaveProperty('metadata');
-      
+
       // Step 3: Verify all ML models were called
       expect(result.scores).toHaveProperty('nlp');
       expect(result.scores).toHaveProperty('url');
-      
+
       // Step 4: Verify processing time is reasonable
       expect(result.metadata.processing_time_ms).toBeLessThan(10000);
-      
+
       // Step 5: Verify threat intel was checked
       expect(result.metadata).toHaveProperty('threat_intel_checked');
-      
+
       console.log('✅ Complete pipeline test passed:', {
         url: testURL,
         is_threat: result.is_threat,
@@ -290,7 +297,7 @@ Team Lead
       ];
 
       const startTime = Date.now();
-      
+
       const promises = urls.map(url =>
         axios.post(
           `${DETECTION_API}/api/v1/detect/url`,
@@ -301,7 +308,7 @@ Team Lead
 
       const responses = await Promise.all(promises);
       const endTime = Date.now();
-      
+
       // All should succeed
       responses.forEach(response => {
         expect(response.status).toBe(200);
@@ -310,13 +317,13 @@ Team Lead
       // Should complete in reasonable time (parallel processing)
       const totalTime = endTime - startTime;
       console.log(`✅ Processed ${urls.length} URLs concurrently in ${totalTime}ms`);
-      
+
       expect(totalTime).toBeLessThan(15000);
     }, 30000);
 
     test('Should use caching for repeated URLs', async () => {
       const url = 'https://example.com';
-      
+
       // First request (should be slower)
       const start1 = Date.now();
       const response1 = await axios.post(
@@ -337,10 +344,10 @@ Team Lead
 
       expect(response1.status).toBe(200);
       expect(response2.status).toBe(200);
-      
+
       // Results should be consistent
       expect(response1.data.is_threat).toBe(response2.data.is_threat);
-      
+
       // Second request should be faster (cached)
       console.log(`⚡ Cache performance: First=${time1}ms, Second=${time2}ms`);
       expect(time2).toBeLessThan(time1);
@@ -356,7 +363,8 @@ async function waitForServices(maxWaitTime = 60000): Promise<void> {
     { name: 'Detection API', url: `${DETECTION_API}/health` },
     { name: 'Threat Intel', url: `${THREAT_INTEL_API}/health` },
     { name: 'NLP Service', url: `${NLP_SERVICE}/health` },
-    { name: 'URL Service', url: `${URL_SERVICE}/health` }
+    { name: 'URL Service', url: `${URL_SERVICE}/health` },
+    { name: 'Visual Service', url: `${VISUAL_SERVICE}/health` }
   ];
 
   const startTime = Date.now();
@@ -365,21 +373,22 @@ async function waitForServices(maxWaitTime = 60000): Promise<void> {
     try {
       const checks = await Promise.all(
         services.map(service =>
-          axios.get(service.url, { timeout: 2000 })
+          axios
+            .get(service.url, { timeout: 2000 })
             .then(() => ({ ...service, ready: true }))
             .catch(() => ({ ...service, ready: false }))
         )
       );
 
       const allReady = checks.every(check => check.ready);
-      
+
       if (allReady) {
         return;
       }
 
       const notReady = checks.filter(c => !c.ready).map(c => c.name);
       console.log(`⏳ Waiting for: ${notReady.join(', ')}`);
-      
+
       await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (error) {
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -387,21 +396,4 @@ async function waitForServices(maxWaitTime = 60000): Promise<void> {
   }
 
   throw new Error('Services did not become ready in time');
-}
-
-/**
- * Test Configuration
- */
-const testConfig = {
-  timeout: 30000,
-  verbose: true
-};
-
-// Only run if API key is configured
-if (!API_KEY) {
-  console.error('❌ TEST_API_KEY environment variable not set');
-  console.log('Create an API key using the setup script first:');
-  console.log('  cd backend/shared/scripts');
-  console.log('  ts-node create-initial-setup.ts ...');
-  process.exit(1);
 }

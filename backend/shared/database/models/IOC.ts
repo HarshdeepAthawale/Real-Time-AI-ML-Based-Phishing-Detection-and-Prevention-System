@@ -52,6 +52,12 @@ export class IOC {
   @Column({ type: 'int', default: 1 })
   source_reports: number;
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  source: string | null;
+
+  @Column({ type: 'boolean', default: true })
+  is_active: boolean;
+
   @Column({ type: 'jsonb', default: {} })
   metadata: Record<string, any>;
 

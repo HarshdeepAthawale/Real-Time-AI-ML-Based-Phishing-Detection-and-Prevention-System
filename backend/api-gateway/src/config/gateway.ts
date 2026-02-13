@@ -38,13 +38,13 @@ export const serviceConfigs: Record<string, ServiceConfig> = {
   },
   'url-service': {
     name: 'url-service',
-    url: process.env.URL_SERVICE_URL || 'http://url-service:8000',
+    url: process.env.URL_SERVICE_URL || 'http://url-service:8001',
     timeout: 30000,
     retries: 2
   },
   'visual-service': {
     name: 'visual-service',
-    url: process.env.VISUAL_SERVICE_URL || 'http://visual-service:8000',
+    url: process.env.VISUAL_SERVICE_URL || 'http://visual-service:8002',
     timeout: 60000,
     retries: 2
   }

@@ -45,9 +45,9 @@ export class MISPClient {
   private apiKey: string;
   private enabled: boolean;
 
-  constructor() {
-    this.baseUrl = process.env.MISP_URL || '';
-    this.apiKey = process.env.MISP_API_KEY || '';
+  constructor(baseUrl?: string, apiKey?: string) {
+    this.baseUrl = baseUrl || process.env.MISP_URL || '';
+    this.apiKey = apiKey || process.env.MISP_API_KEY || '';
     this.enabled = Boolean(this.baseUrl && this.apiKey);
 
     if (!this.enabled) {

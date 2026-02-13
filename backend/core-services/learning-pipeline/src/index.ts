@@ -54,7 +54,9 @@ async function initializeServices(): Promise<void> {
     logger.info('Databases connected');
 
     // Drift detector is always initialized (DB-backed only)
-    driftDetector = new DriftDetectorService(dataSource);
+    // Cast to any to avoid shared/lp typeorm version mismatch
+    const ds = dataSource as any;
+    driftDetector = new DriftDetectorService(ds);
 
     const awsEnabled = isAwsEnabled();
 
@@ -71,11 +73,11 @@ async function initializeServices(): Promise<void> {
       logger.info('AWS clients initialized');
 
       // Initialize AWS-dependent services
-      dataCollector = new DataCollectorService(dataSource, s3Client);
+      dataCollector = new DataCollectorService(ds, s3Client);
       featureStore = new FeatureStoreService(s3Client);
-      trainingOrchestrator = new TrainingOrchestratorService(ecsClient, dataSource);
-      validator = new ValidatorService(s3Client, dataSource);
-      deployment = new DeploymentService(s3Client, ecsClient, dataSource);
+      trainingOrchestrator = new TrainingOrchestratorService(ecsClient, ds);
+      validator = new ValidatorService(s3Client, ds);
+      deployment = new DeploymentService(s3Client, ecsClient, ds);
 
       // Initialize scheduled training job (requires AWS)
       scheduledTrainingJob = new ScheduledTrainingJob(

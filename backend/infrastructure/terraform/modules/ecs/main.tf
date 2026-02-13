@@ -260,3 +260,23 @@ output "service_discovery_namespace_arn" {
   description = "Service Discovery namespace ARN"
   value       = aws_service_discovery_private_dns_namespace.main.arn
 }
+
+output "api_gateway_service_name" {
+  description = "ECS API Gateway service name"
+  value       = aws_ecs_service.api_gateway.name
+}
+
+output "detection_api_service_name" {
+  description = "ECS Detection API service name"
+  value       = aws_ecs_service.detection_api.name
+}
+
+output "threat_intel_service_name" {
+  description = "ECS Threat Intel service name"
+  value       = aws_ecs_service.threat_intel.name
+}
+
+output "extension_api_service_name" {
+  description = "ECS Extension API service name"
+  value       = aws_ecs_service.extension_api.name
+}

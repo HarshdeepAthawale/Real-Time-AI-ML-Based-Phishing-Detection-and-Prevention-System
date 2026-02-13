@@ -137,7 +137,7 @@ router.get('/summary', async (req: Request, res: Response) => {
     const feedManager = req.app.get('feedManager') as FeedManagerService;
 
     const stats = await iocManager.getStats();
-    const feeds = await feedManager.listFeeds();
+    const feeds = await feedManager.getAllFeeds();
 
     // Calculate zero-day detection rate based on recent IOCs
     const recentCount = stats.recentCount || 0;

@@ -38,7 +38,7 @@ router.post('/connect', async (req: ExtensionRequest, res: Response) => {
       });
     }
     
-    const config: EmailAccountConfig = validationResult.data;
+    const config = { ...validationResult.data, id: validationResult.data.id } as EmailAccountConfig;
     
     // Get services from app context
     const emailClient = req.app.get('emailClient') as EmailClientService;

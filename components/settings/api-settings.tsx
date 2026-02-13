@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Key, Eye, EyeOff, Copy, Check, Globe } from 'lucide-react'
+import { Key, Eye, EyeOff, Copy, Check, Globe, Radio } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,17 +14,22 @@ const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:300
 export function ApiSettings() {
   const [apiKey, setApiKey] = useState('')
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL)
+  const [wsUrl, setWsUrl] = useState('')
+  const [organizationId, setOrganizationId] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [copied, setCopied] = useState(false)
   const { toast } = useToast()
 
-  // Load API key and URL from localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const storedKey = localStorage.getItem('api_key')
       if (storedKey) setApiKey(storedKey)
       const storedUrl = localStorage.getItem('api_url')
       if (storedUrl) setApiUrl(storedUrl)
+      const storedWs = localStorage.getItem('ws_url')
+      if (storedWs) setWsUrl(storedWs)
+      const storedOrg = localStorage.getItem('organization_id')
+      if (storedOrg) setOrganizationId(storedOrg)
     }
   }, [])
 
@@ -32,9 +37,19 @@ export function ApiSettings() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('api_key', apiKey)
       localStorage.setItem('api_url', apiUrl.trim() || DEFAULT_API_URL)
+      if (wsUrl.trim()) {
+        localStorage.setItem('ws_url', wsUrl.trim())
+      } else {
+        localStorage.removeItem('ws_url')
+      }
+      if (organizationId.trim()) {
+        localStorage.setItem('organization_id', organizationId.trim())
+      } else {
+        localStorage.removeItem('organization_id')
+      }
       toast({
         title: 'Settings Saved',
-        description: 'API URL and key have been saved. Refresh the page for URL changes to take effect.',
+        description: 'API settings saved. Refresh the page for URL changes to take effect.',
       })
     }
   }
@@ -77,6 +92,37 @@ export function ApiSettings() {
           </div>
           <p className="text-xs text-muted-foreground">
             Backend API gateway or detection API URL (e.g. http://localhost:3000)
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="wsUrl">WebSocket URL (optional)</Label>
+          <div className="flex gap-2 items-center">
+            <Radio className="w-4 h-4 text-muted-foreground" />
+            <Input
+              id="wsUrl"
+              type="url"
+              value={wsUrl}
+              onChange={(e) => setWsUrl(e.target.value)}
+              placeholder="Same as API URL"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Override WebSocket URL if different from API URL. Leave empty to use API URL.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="organizationId">Organization ID (optional)</Label>
+          <Input
+            id="organizationId"
+            type="text"
+            value={organizationId}
+            onChange={(e) => setOrganizationId(e.target.value)}
+            placeholder="org-uuid"
+          />
+          <p className="text-xs text-muted-foreground">
+            Required for real-time monitoring subscriptions. Get from your API key setup.
           </p>
         </div>
 

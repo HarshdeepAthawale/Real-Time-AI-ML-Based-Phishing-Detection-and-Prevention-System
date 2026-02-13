@@ -2,6 +2,9 @@ import { logger } from '../utils/logger';
 
 export interface BehavioralIndicators {
   overall_risk: number; // 0-100
+  isMalicious: boolean;  // overall_risk >= 60
+  threatScore: number;   // same as overall_risk for compatibility
+  indicators: string[];  // flattened from categories
   categories: {
     network: {
       score: number;
@@ -38,6 +41,13 @@ export interface BehavioralIndicators {
   threat_classification: 'malware' | 'phishing' | 'ransomware' | 'trojan' | 'adware' | 'unknown';
 }
 
+/** Alias for createThreatRecord compatibility */
+export type BehavioralAnalysis = BehavioralIndicators & {
+  networkActivity?: any;
+  fileSystemActivity?: any;
+  processActivity?: any;
+};
+
 export class BehavioralAnalyzerService {
   /**
    * Analyze sandbox results for behavioral indicators
@@ -45,21 +55,35 @@ export class BehavioralAnalyzerService {
   analyze(sandboxResult: any): BehavioralIndicators {
     logger.info('Analyzing behavioral indicators');
 
+    const categories = {
+      network: this.analyzeNetwork(sandboxResult.network),
+      process: this.analyzeProcesses(sandboxResult.processes),
+      filesystem: this.analyzeFilesystem(sandboxResult.files, sandboxResult.dropped),
+      registry: this.analyzeRegistry(sandboxResult.registry),
+      evasion: this.analyzeEvasion(sandboxResult)
+    };
+
     const indicators: BehavioralIndicators = {
       overall_risk: 0,
-      categories: {
-        network: this.analyzeNetwork(sandboxResult.network),
-        process: this.analyzeProcesses(sandboxResult.processes),
-        filesystem: this.analyzeFilesystem(sandboxResult.files, sandboxResult.dropped),
-        registry: this.analyzeRegistry(sandboxResult.registry),
-        evasion: this.analyzeEvasion(sandboxResult)
-      },
+      categories,
       mitre_techniques: this.extractMitreTechniques(sandboxResult.mitre || []),
-      threat_classification: this.classifyThreat(sandboxResult)
+      threat_classification: this.classifyThreat(sandboxResult),
+      isMalicious: false,
+      threatScore: 0,
+      indicators: []
     };
 
     // Calculate overall risk score
     indicators.overall_risk = this.calculateOverallRisk(indicators);
+    indicators.threatScore = indicators.overall_risk;
+    indicators.isMalicious = indicators.overall_risk >= 60;
+    indicators.indicators = [
+      ...categories.network.indicators,
+      ...categories.process.indicators,
+      ...categories.filesystem.indicators,
+      ...categories.registry.indicators,
+      ...categories.evasion.indicators
+    ];
 
     return indicators;
   }

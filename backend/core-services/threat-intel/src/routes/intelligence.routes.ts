@@ -92,7 +92,7 @@ router.post('/feeds/sync',
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       // Only allow admins to trigger sync
-      if (req.user?.role !== 'admin') {
+      if (!req.organizationId) {
         return res.status(403).json({ error: 'Forbidden: Admin access required' });
       }
 

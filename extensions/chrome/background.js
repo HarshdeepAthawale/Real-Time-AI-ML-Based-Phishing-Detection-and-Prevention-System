@@ -8,7 +8,22 @@ let BLOCK_SEVERITY = 'high'; // 'critical', 'high', 'medium', 'low'
 const allowlistedUrls = new Set();
 // Dynamic rules for proactive blocking (ruleId -> url)
 const threatRuleIds = new Map();
+// Threat blocklist for before-navigation blocking (url -> threatInfo)
+const threatBlocklist = new Map();
 const RULE_ID_BASE = 1000000;
+
+// Normalize URL for consistent blocklist matching
+function normalizeUrl(url) {
+  try {
+    const u = new URL(url);
+    u.hash = '';
+    u.searchParams.sort();
+    let path = u.pathname.replace(/\/+$/, '') || '/';
+    return `${u.origin}${path}${u.search}`;
+  } catch (_) {
+    return url;
+  }
+}
 
 // Initialize extension
 chrome.runtime.onInstalled.addListener(() => {
@@ -48,14 +63,25 @@ function shouldBlock(severity) {
 
 // Add dynamic rule to block URL on next navigation (proactive blocking)
 async function addThreatBlockRule(url, threatInfo) {
+  const norm = normalizeUrl(url);
+  const ind = threatInfo.indicators;
+  const indicators = Array.isArray(ind) ? ind : (ind ? [ind] : []);
+  const info = {
+    threatType: threatInfo.threatType || 'phishing',
+    severity: threatInfo.severity || 'high',
+    confidence: threatInfo.confidence || 0,
+    indicators
+  };
+  threatBlocklist.set(norm, { ...info, url });
+
   try {
     const ruleId = RULE_ID_BASE + threatRuleIds.size;
     const params = new URLSearchParams({
       url: url,
-      type: threatInfo.threatType || 'phishing',
-      severity: threatInfo.severity || 'high',
-      confidence: String(threatInfo.confidence || 0),
-      indicators: (threatInfo.indicators || []).join(',')
+      type: info.threatType,
+      severity: info.severity,
+      confidence: String(info.confidence),
+      indicators: info.indicators.join(',')
     });
     const redirectUrl = chrome.runtime.getURL(`blocked.html?${params.toString()}`);
 
@@ -71,7 +97,7 @@ async function addThreatBlockRule(url, threatInfo) {
       }],
       removeRuleIds: []
     });
-    threatRuleIds.set(url, ruleId);
+    threatRuleIds.set(norm, ruleId);
   } catch (e) {
     console.warn('Could not add block rule:', e);
   }
@@ -79,16 +105,37 @@ async function addThreatBlockRule(url, threatInfo) {
 
 // Remove block rule when user proceeds anyway
 async function removeThreatBlockRule(url) {
-  const ruleId = threatRuleIds.get(url);
+  const norm = normalizeUrl(url);
+  const ruleId = threatRuleIds.get(norm);
   if (ruleId) {
     try {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [ruleId] });
-      threatRuleIds.delete(url);
+      threatRuleIds.delete(norm);
+      threatBlocklist.delete(norm);
     } catch (e) {
       console.warn('Could not remove block rule:', e);
     }
   }
 }
+
+// Block navigation BEFORE page loads when URL is in blocklist
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  if (details.frameId !== 0) return; // Only main frame
+  const norm = normalizeUrl(details.url);
+  if (allowlistedUrls.has(norm) || allowlistedUrls.has(details.url)) return;
+  const threatInfo = threatBlocklist.get(norm);
+  if (threatInfo && shouldBlock(threatInfo.severity)) {
+    const params = new URLSearchParams({
+      url: details.url,
+      type: threatInfo.threatType || 'phishing',
+      severity: threatInfo.severity || 'high',
+      confidence: String(threatInfo.confidence || 0),
+      indicators: (threatInfo.indicators || []).join(',')
+    });
+    const blockedUrl = chrome.runtime.getURL(`blocked.html?${params.toString()}`);
+    chrome.tabs.update(details.tabId, { url: blockedUrl });
+  }
+});
 
 // Check URL when tab is updated
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -100,9 +147,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       return;
     }
 
-    // Skip allowlisted URLs
-    if (allowlistedUrls.has(tab.url)) {
-      allowlistedUrls.delete(tab.url); // One-time allowlist
+    const norm = normalizeUrl(tab.url);
+    if (allowlistedUrls.has(norm) || allowlistedUrls.has(tab.url)) {
+      allowlistedUrls.delete(norm);
+      allowlistedUrls.delete(tab.url);
       return;
     }
 
@@ -124,10 +172,10 @@ async function checkURL(url, tabId) {
 
     if (cached[cacheKey] && cached[cacheKey].timestamp > Date.now() - 1800000) {
       const result = cached[cacheKey];
-      updateBadge(result.isThreat, result.severity, tabId);
+      const isThreat = result.isThreat === true || result.is_threat === true;
+      updateBadge(isThreat, result.severity, tabId);
 
-      // Block if threat detected and blocking enabled (from cache - rule may already exist)
-      if (result.isThreat && shouldBlock(result.severity)) {
+      if (isThreat && shouldBlock(result.severity)) {
         redirectToBlockedPage(tabId, url, result);
       }
       return;
@@ -148,17 +196,18 @@ async function checkURL(url, tabId) {
     }
 
     const result = await response.json();
+    const isThreat = result.isThreat === true || result.is_threat === true;
 
     // Cache result
     await chrome.storage.local.set({
-      [cacheKey]: { ...result, timestamp: Date.now() }
+      [cacheKey]: { ...result, isThreat, timestamp: Date.now() }
     });
 
     // Update badge
-    updateBadge(result.isThreat, result.severity, tabId);
+    updateBadge(isThreat, result.severity, tabId);
 
     // Store threat info for popup
-    if (result.isThreat) {
+    if (isThreat) {
       await chrome.storage.local.set({ [`threat_${tabId}`]: result });
 
       // Add dynamic rule for future visits (proactive block on next navigation)
@@ -238,8 +287,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'allowlistUrl') {
-    allowlistedUrls.add(request.url);
-    removeThreatBlockRule(request.url);
+    const url = request.url;
+    allowlistedUrls.add(url);
+    allowlistedUrls.add(normalizeUrl(url));
+    removeThreatBlockRule(url);
     sendResponse({ success: true });
   }
 

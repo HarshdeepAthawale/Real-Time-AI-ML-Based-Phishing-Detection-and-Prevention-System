@@ -65,3 +65,13 @@ output "alb_arn" {
   description = "Application Load Balancer ARN"
   value       = module.ecs.alb_arn
 }
+
+output "ecs_service_names" {
+  description = "ECS service names for CI deploy"
+  value = {
+    api_gateway    = module.ecs.api_gateway_service_name
+    detection_api  = module.ecs.detection_api_service_name
+    threat_intel   = module.ecs.threat_intel_service_name
+    extension_api  = module.ecs.extension_api_service_name
+  }
+}

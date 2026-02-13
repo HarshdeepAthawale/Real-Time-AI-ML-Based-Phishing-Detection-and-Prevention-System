@@ -14,6 +14,7 @@ export {
 } from '../services/file-analyzer.service';
 
 export {
+  BehavioralIndicators,
   BehavioralAnalysis,
 } from '../services/behavioral-analyzer.service';
 

@@ -31,8 +31,12 @@ class DOMAnalyzer:
         # Analyze structure
         structure = self._analyze_structure(soup)
         
+        # Extract visible text for NLP analysis (orchestrator passes to NLP service)
+        text = self._extract_visible_text(soup)
+        
         return {
             "dom_hash": dom_hash,
+            "text": text,
             "element_count": len(soup.find_all()),
             "forms": forms,
             "form_count": len(forms),
@@ -121,6 +125,13 @@ class DOMAnalyzer:
             "external_script_count": len([s for s in soup.find_all('script', src=True) if s.get('src', '').startswith('http')])
         }
     
+    def _extract_visible_text(self, soup: BeautifulSoup, max_len: int = 5000) -> str:
+        """Extract visible text from page for NLP analysis"""
+        for tag in soup(['script', 'style']):
+            tag.decompose()
+        text = soup.get_text(separator=' ', strip=True)
+        return text[:max_len] if text else ""
+
     def _is_suspicious(self, forms: List[Dict], links: List[Dict], structure: Dict) -> bool:
         """Detect suspicious patterns"""
         # Multiple forms

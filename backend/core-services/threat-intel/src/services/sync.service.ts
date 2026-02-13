@@ -63,14 +63,14 @@ export class SyncService {
       case 'misp':
         if (feed.apiEndpoint && feed.apiKeyEncrypted) {
           // In production, decrypt apiKeyEncrypted
-          return new MISPClient(feed.apiEndpoint, feed.apiKeyEncrypted);
+          return new MISPClient(feed.apiEndpoint, feed.apiKeyEncrypted) as unknown as BaseFeedClient;
         }
         break;
       
       case 'otx':
         if (feed.apiKeyEncrypted) {
           // In production, decrypt apiKeyEncrypted
-          return new OTXClient(feed.apiKeyEncrypted);
+          return new OTXClient(feed.apiKeyEncrypted) as unknown as BaseFeedClient;
         }
         break;
       

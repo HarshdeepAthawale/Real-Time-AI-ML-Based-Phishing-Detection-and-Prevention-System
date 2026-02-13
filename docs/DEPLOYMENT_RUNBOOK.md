@@ -18,8 +18,11 @@ For the backend CI/CD pipeline to build, push images, and deploy, configure thes
 | `AWS_ACCOUNT_ID` | AWS account ID (12 digits) | ECR login |
 | `TF_VAR_DB_PASSWORD` | RDS master password for dev | Terraform plan/apply (dev) |
 | `TF_VAR_DB_PASSWORD_PROD` | RDS master password for prod | Terraform apply (prod) |
+| `TEST_API_KEY` | API key for smoke and integration tests | Smoke test, integration tests |
 
 Without these secrets, the `build-docker-images`, `terraform-plan`, `deploy-dev`, and `deploy-prod` jobs will fail.
+
+**TEST_API_KEY:** On first `docker compose up`, the database seeds a default test key `testkey_smoke_test_12345` (see `backend/shared/database/init/003_seed_api_key.sql`). Use this for local smoke/integration tests, or set the GitHub secret to the same value. For production, create keys via `backend/shared/scripts/create-initial-setup.ts`.
 
 ---
 - Node.js 18+ and npm
@@ -43,11 +46,11 @@ Without these secrets, the `build-docker-images`, `terraform-plan`, `deploy-dev`
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `http://localhost:3000` |
 
-### Detection API (port 3002)
+### Detection API (port 3001)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DETECTION_API_PORT` | Service port | `3002` |
+| `DETECTION_API_PORT` | Service port | `3001` |
 | `NLP_SERVICE_URL` | NLP service base URL | `http://localhost:8000` |
 | `URL_SERVICE_URL` | URL service base URL | `http://localhost:8001` |
 | `VISUAL_SERVICE_URL` | Visual service base URL | `http://localhost:8002` |
@@ -110,9 +113,14 @@ After starting the stack, run the smoke test to validate the detection flow:
 
 ```bash
 # Ensure services are running (docker compose up)
+# Run setup-ml-models.sh before first docker compose up
+./scripts/setup-ml-models.sh
+docker compose up -d
+
 chmod +x scripts/smoke-test.sh
-./scripts/smoke-test.sh http://localhost:3000 $TEST_API_KEY
-# Or if using detection-api directly: ./scripts/smoke-test.sh http://localhost:3001 $TEST_API_KEY
+./scripts/smoke-test.sh http://localhost:3000
+# Uses TEST_API_KEY if set; otherwise seeded key testkey_smoke_test_12345
+# Or: ./scripts/smoke-test.sh http://localhost:3001 $TEST_API_KEY
 ```
 
 ---
@@ -163,31 +171,62 @@ cd ../learning-pipeline && npm run dev &
 ## 3. Docker Deployment
 
 ```bash
+# Copy env and set POSTGRES_PASSWORD
+cp .env.example .env
+
+# Set up ML models (required before first run)
+./scripts/setup-ml-models.sh
+
 # Build all services
 docker compose build
 
-# Start everything
+# Start everything (minimal: postgres, redis, mongodb, api-gateway, detection-api, ML services)
 docker compose up -d
 
-# Check health
-curl http://localhost:3002/api/v1/health
-curl http://localhost:8000/api/v1/health
-curl http://localhost:8001/api/v1/health
-curl http://localhost:8002/api/v1/health
+# Full stack (threat-intel, extension-api, sandbox-service, learning-pipeline):
+# docker compose --profile full up -d
+
+# Check health (ports: 3000=api-gateway, 3001=detection-api, 3002=threat-intel, 8000–8002=ML)
+curl http://localhost:3000/health
+curl http://localhost:3001/health
+curl http://localhost:8000/health
+curl http://localhost:8001/health
+curl http://localhost:8002/health
 ```
 
 ---
 
 ## 4. Production Deployment (AWS)
 
+### 4.0 AWS Setup via CLI (One-Time)
+
+For full AWS setup via CLI (bootstrap, ECR, Terraform, secrets):
+
+```bash
+export TF_VAR_db_password="your-secure-password"
+./scripts/aws-setup.sh all
+```
+
+See [docs/AWS_CLI_SETUP.md](AWS_CLI_SETUP.md) for step-by-step and environment variables.
+
 ### 4.1 Infrastructure (Terraform)
 
 ```bash
 cd backend/infrastructure/terraform
 terraform init
-terraform plan -var-file=production.tfvars
-terraform apply -var-file=production.tfvars
+terraform plan -var-file=environments/prod.tfvars
+terraform apply -var-file=environments/prod.tfvars
 ```
+
+### 4.1.1 Production Checklist
+
+Before production deploy, ensure:
+
+- [ ] `certificate_arn` is set in `environments/prod.tfvars` (ACM certificate for HTTPS)
+- [ ] `TF_VAR_db_password_PROD` GitHub secret is configured
+- [ ] ML models are built/uploaded (`./scripts/setup-ml-models.sh` for local; S3 sync for ECS)
+- [ ] Threat intel API keys (MISP, OTX, PhishTank, etc.) are set if feed sync is required
+- [ ] Sandbox keys (ANYRUN_API_KEY or CUCKOO_*) are set if sandbox analysis is required
 
 ### 4.2 ECS Service Deployment
 
@@ -252,13 +291,24 @@ aws ssm put-parameter --name "/phishing-detection/prod/MONGODB_URI" --value "...
 
 ## 6. Health Checks
 
-All services expose `/api/v1/health`:
+Core services expose `/health`:
+
+| Port | Service |
+|------|---------|
+| 3000 | API Gateway |
+| 3001 | Detection API |
+| 3002 | Threat Intel |
+| 3003 | Extension API |
+| 3004 | Sandbox Service |
+| 8000 | NLP Service |
+| 8001 | URL Service |
+| 8002 | Visual Service |
 
 ```bash
-# Quick health check for all services
-for port in 3002 3003 3004 3005 3006 8000 8001 8002; do
+# Quick health check for core services
+for port in 3000 3001 8000 8001 8002; do
   echo -n "Port $port: "
-  curl -s http://localhost:$port/api/v1/health | jq -r '.status // .detail // "error"'
+  curl -s http://localhost:$port/health | jq -r '.status // .detail // "error"'
 done
 ```
 

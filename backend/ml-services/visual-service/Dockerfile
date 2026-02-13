@@ -1,9 +1,10 @@
-FROM python:3.11-slim
+# Pin to Bookworm (Debian 12) - has ttf-unifont; Trixie/slim latest lacks it
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# Install system dependencies for Playwright
-RUN apt-get update && apt-get install -y \
+# Install system deps for Playwright (Bookworm has correct package names)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     wget \
@@ -34,9 +35,8 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium
-RUN playwright install-deps chromium
+# Install Chromium with deps (Bookworm: ttf-unifont available)
+RUN playwright install chromium --with-deps
 
 COPY . .
 

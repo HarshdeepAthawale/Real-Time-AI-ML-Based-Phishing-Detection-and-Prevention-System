@@ -11,6 +11,7 @@ import { IOCBulkChecker } from '@/components/ioc/ioc-bulk-checker'
 import { IOCSearch } from '@/components/ioc/ioc-search'
 import { IOCReporter } from '@/components/ioc/ioc-reporter'
 import { IOCStats } from '@/components/ioc/ioc-stats'
+import { ApiKeyBanner } from '@/components/api-key-banner'
 import { Spinner } from '@/components/ui/loading'
 
 function IOCSContent() {
@@ -26,6 +27,7 @@ function IOCSContent() {
 
   return (
     <div className="p-6 space-y-6">
+      <ApiKeyBanner />
       {/* Header */}
       <div>
         <div className="flex items-center gap-3">

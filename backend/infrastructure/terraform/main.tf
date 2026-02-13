@@ -13,7 +13,7 @@ terraform {
 
   backend "s3" {
     # Configure backend in terraform/backend.tfvars
-    bucket         = "phishing-detection-terraform-state-1768755350"
+    bucket         = "phishing-detection-terraform-state-047385030558"
     key            = "terraform.tfstate"
     region         = "ap-south-1"
     dynamodb_table = "terraform-state-lock"
@@ -79,4 +79,15 @@ module "ecs" {
   vpc_id            = module.vpc.vpc_id
   subnet_ids        = module.vpc.private_subnet_ids
   security_group_id = module.vpc.ecs_services_security_group_id
+  certificate_arn   = var.certificate_arn
+
+  # Database connection (for task env vars)
+  db_host     = module.rds.db_host
+  db_port     = tostring(module.rds.db_port)
+  db_name     = module.rds.db_name
+  db_username = "postgres"
+  db_password = var.db_password
+
+  # Redis connection (ElastiCache uses 6379 by default)
+  redis_endpoint = "${module.redis.redis_endpoint}:6379"
 }

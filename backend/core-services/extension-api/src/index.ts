@@ -14,7 +14,7 @@ import emailScanRoutes from './routes/email-scan.routes';
 import reportRoutes from './routes/report.routes';
 import emailClientRoutes from './routes/email-client.routes';
 import { EmailClientService } from './services/email-client.service';
-import { connectPostgreSQL, disconnectPostgreSQL, getPostgreSQL } from '../../shared/database';
+import { connectPostgreSQL, disconnectPostgreSQL, getPostgreSQL } from '../../../shared/database';
 
 const app = express();
 

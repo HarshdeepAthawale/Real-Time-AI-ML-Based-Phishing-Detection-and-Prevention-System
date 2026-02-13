@@ -5,14 +5,14 @@
 | Service | Default Port | Base URL |
 |---------|-------------|----------|
 | API Gateway | 3000 | `http://localhost:3000/api/v1` |
-| Detection API | 3002 | `http://localhost:3002/api/v1` |
+| Detection API | 3001 | `http://localhost:3001/api/v1` |
+| Threat Intel | 3002 | `http://localhost:3002/api/v1` |
 | Extension API | 3003 | `http://localhost:3003/api/v1` |
-| Threat Intel | 3004 | `http://localhost:3004/api/v1` |
+| Sandbox Service | 3004 | `http://localhost:3004/api/v1` |
 | Learning Pipeline | 3005 | `http://localhost:3005/api/v1` |
-| Sandbox Service | 3006 | `http://localhost:3006/api/v1` |
-| NLP Service | 8000 | `http://localhost:8000/api/v1` |
-| URL Service | 8001 | `http://localhost:8001/api/v1` |
-| Visual Service | 8002 | `http://localhost:8002/api/v1` |
+| NLP Service | 8000 | `http://localhost:8000` |
+| URL Service | 8001 | `http://localhost:8001` |
+| Visual Service | 8002 | `http://localhost:8002` |
 
 ## Authentication
 
@@ -155,7 +155,43 @@ Get latency statistics per endpoint.
 
 ## Threat Intelligence API
 
-### GET /api/v1/iocs
+### GET /api/v1/intelligence/domains
+
+Get malicious domains list.
+
+**Query Parameters:**
+- `limit` (number) - Max results (default: 50)
+- `offset` (number) - Pagination offset (default: 0)
+
+**Response:** Array of `{ domain, reputation, reports, firstSeen?, lastSeen? }`
+
+### GET /api/v1/intelligence/patterns
+
+Get threat patterns aggregated from IOCs.
+
+**Query Parameters:**
+- `limit` (number) - Max results (default: 20)
+
+**Response:** Array of `{ pattern, incidents, severity? }`
+
+### GET /api/v1/intelligence/iocs
+
+Get IOCs list.
+
+**Query Parameters:**
+- `limit`, `offset`, `type` (optional IOC type filter)
+
+**Response:** Array of `{ value, type, sources, firstSeen?, lastSeen?, severity? }`
+
+### GET /api/v1/intelligence/summary
+
+Get threat intelligence summary statistics.
+
+**Response:** `{ knownThreats, feedIntegrations, zeroDayDetection, lastUpdated }`
+
+---
+
+### GET /api/v1/ioc/search (IOC Search)
 
 List IOCs with pagination.
 
@@ -184,6 +220,32 @@ List configured threat intelligence feeds.
 ### POST /api/v1/feeds/sync
 
 Trigger manual feed synchronization.
+
+---
+
+## Sandbox API
+
+### GET /api/v1/sandbox/status
+
+Check if sandbox analysis is enabled.
+
+**Response:** `{ sandboxEnabled, provider, message? }`
+
+### POST /api/v1/sandbox/analyze/file
+
+Submit a file for sandbox analysis (multipart/form-data, field: `file`).
+
+### POST /api/v1/sandbox/analyze/url
+
+Submit a URL for sandbox analysis. Body: `{ url: string }`.
+
+### GET /api/v1/sandbox/analysis/:id
+
+Get analysis status and results.
+
+### GET /api/v1/sandbox/analyses
+
+List analyses with pagination. Query: `page`, `limit`.
 
 ---
 

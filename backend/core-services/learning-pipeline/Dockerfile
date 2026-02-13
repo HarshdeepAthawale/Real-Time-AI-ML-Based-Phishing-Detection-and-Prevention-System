@@ -1,19 +1,19 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy shared package.json and install dependencies
-COPY shared/package*.json ./shared/
-RUN cd shared && npm ci
-
-# Copy learning-pipeline package.json and install dependencies
-COPY core-services/learning-pipeline/package*.json ./core-services/learning-pipeline/
-RUN cd core-services/learning-pipeline && npm ci
-
 # Copy shared source code
 COPY shared ./shared
 
-# Copy learning-pipeline source code
-COPY core-services/learning-pipeline ./core-services/learning-pipeline
+# Copy learning-pipeline package.json and install dependencies
+COPY core-services/learning-pipeline/package*.json ./core-services/learning-pipeline/
+WORKDIR /app/core-services/learning-pipeline
+RUN npm ci
+
+# Copy learning-pipeline source code (into current workdir)
+COPY core-services/learning-pipeline ./
+
+# Symlink so shared resolves deps from learning-pipeline's node_modules
+RUN ln -sf ../core-services/learning-pipeline/node_modules /app/shared/node_modules
 
 # Build learning-pipeline (shared will be compiled as part of this)
 WORKDIR /app/core-services/learning-pipeline

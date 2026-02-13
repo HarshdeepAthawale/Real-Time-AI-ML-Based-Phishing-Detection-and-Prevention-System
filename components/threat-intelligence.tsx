@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { Database, Globe, LinkIcon, AlertTriangle } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -205,8 +206,15 @@ export default function ThreatIntelligence() {
       </Tabs>
 
       {error && (
-        <Alert>
-          <AlertDescription>{error}</AlertDescription>
+        <Alert variant="destructive">
+          <AlertDescription>
+            {error}
+            {' '}
+            <Link href="/settings" className="underline font-medium hover:text-destructive-foreground">
+              Check Settings
+            </Link>
+            {' '}to configure your API key and URL.
+          </AlertDescription>
         </Alert>
       )}
 

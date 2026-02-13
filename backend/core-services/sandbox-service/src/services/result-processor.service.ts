@@ -2,7 +2,7 @@ import { BaseSandboxClient, SandboxResult } from '../integrations/base-sandbox.c
 import { DataSource, Repository } from 'typeorm';
 import { SandboxAnalysis } from '../../../../shared/database/models/SandboxAnalysis';
 import { Threat } from '../../../../shared/database/models/Threat';
-import { BehavioralAnalyzerService, BehavioralAnalysis } from './behavioral-analyzer.service';
+import { BehavioralAnalyzerService, BehavioralIndicators } from './behavioral-analyzer.service';
 import { CorrelationService } from './correlation.service';
 import { logger } from '../utils/logger';
 
@@ -126,7 +126,7 @@ export class ResultProcessorService {
   
   private async createThreatRecord(
     analysis: SandboxAnalysis,
-    behavioralAnalysis: BehavioralAnalysis,
+    behavioralAnalysis: BehavioralIndicators,
     sandboxResult: SandboxResult
   ): Promise<void> {
     // Check if threat already exists for this analysis
@@ -137,11 +137,11 @@ export class ResultProcessorService {
     
     // Determine threat type based on indicators
     let threatType = 'malware';
-    if (behavioralAnalysis.indicators.includes('c2_communication')) {
+    if (behavioralAnalysis.indicators.some(i => i.toLowerCase().includes('c2') || i.toLowerCase().includes('communication'))) {
       threatType = 'c2_malware';
-    } else if (behavioralAnalysis.indicators.includes('data_exfiltration')) {
+    } else if (behavioralAnalysis.indicators.some(i => i.toLowerCase().includes('exfiltrat') || i.toLowerCase().includes('data'))) {
       threatType = 'data_stealer';
-    } else if (behavioralAnalysis.indicators.includes('process_injection')) {
+    } else if (behavioralAnalysis.indicators.some(i => i.toLowerCase().includes('injection'))) {
       threatType = 'trojan';
     }
     
@@ -171,9 +171,9 @@ export class ResultProcessorService {
         sandbox_provider: analysis.sandbox_provider,
         sandbox_job_id: analysis.sandbox_job_id,
         indicators: behavioralAnalysis.indicators,
-        networkActivity: behavioralAnalysis.networkActivity,
-        fileSystemActivity: behavioralAnalysis.fileSystemActivity,
-        processActivity: behavioralAnalysis.processActivity
+        networkActivity: behavioralAnalysis.categories?.network,
+        fileSystemActivity: behavioralAnalysis.categories?.filesystem,
+        processActivity: behavioralAnalysis.categories?.process
       },
       detected_at: new Date()
     });

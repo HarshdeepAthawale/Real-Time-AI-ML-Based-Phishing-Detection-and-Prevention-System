@@ -30,7 +30,7 @@ export class IOCMatcherService {
   private lastRebuildTime: Date;
   private readonly rebuildIntervalHours = 1;
 
-  constructor() {
+  constructor(_redis?: any, _iocManager?: any) {
     // Initialize Bloom filters for different IOC types
     const config = {
       expectedItems: parseInt(process.env.BLOOM_FILTER_SIZE || '1000000'),
@@ -121,6 +121,65 @@ export class IOCMatcherService {
   }
 
   /**
+   * Alias for buildBloomFilters (backward compatibility)
+   */
+  async initializeBloomFilters(): Promise<void> {
+    return this.buildBloomFilters();
+  }
+
+  /**
+   * Match IOC by type and value (routes to specific matcher)
+   */
+  async matchIOC(iocType: string, value: string): Promise<IOCMatchResult> {
+    const type = iocType.toLowerCase();
+    if (type === 'url') return this.matchURL(value);
+    if (['domain', 'hostname'].includes(type)) return this.matchDomain(value);
+    if (['ip', 'ipv4', 'ipv6'].includes(type)) return this.matchIP(value);
+    if (['hash', 'md5', 'sha1', 'sha256', 'sha512'].includes(type)) return this.matchHash(value);
+    if (type === 'email') return this.matchEmail(value);
+    return { found: false, matches: [], bloom_filter_hit: false };
+  }
+
+  /**
+   * Add single IOC to Bloom filter (convenience wrapper)
+   */
+  async addToBloomFilter(iocType: string, value: string): Promise<void> {
+    return this.bulkAddToBloomFilter(iocType, [value]);
+  }
+
+  /**
+   * Add multiple IOCs to Bloom filter by type
+   */
+  async bulkAddToBloomFilter(iocType: string, values: string[]): Promise<void> {
+    const filter = this.getBloomFilterForType(iocType);
+    if (!filter) {
+      logger.warn(`No Bloom filter for IOC type: ${iocType}`);
+      return;
+    }
+    for (const value of values) {
+      filter.add(value);
+    }
+  }
+
+  private getBloomFilterForType(iocType: string): BloomFilterService | null {
+    switch (iocType.toLowerCase()) {
+      case 'url': return this.urlBloomFilter;
+      case 'domain':
+      case 'hostname': return this.domainBloomFilter;
+      case 'ip':
+      case 'ipv4':
+      case 'ipv6': return this.ipBloomFilter;
+      case 'hash':
+      case 'md5':
+      case 'sha1':
+      case 'sha256':
+      case 'sha512': return this.hashBloomFilter;
+      case 'email': return this.emailBloomFilter;
+      default: return null;
+    }
+  }
+
+  /**
    * Check if Bloom filters need rebuilding
    */
   needsRebuild(): boolean {
@@ -205,9 +264,10 @@ export class IOCMatcherService {
       const iocRepository = dataSource.getRepository(IOCEntity);
 
       // Query database for exact match
+      const typeVariants = [type, `${type}s`];
       const iocs = await iocRepository.find({
         where: {
-          ioc_type: In([type, `${type}s`]), // Handle plural forms
+          ioc_type: In(typeVariants) as any,
           ioc_value: value,
           is_active: true
         },
@@ -227,7 +287,7 @@ export class IOCMatcherService {
         id: ioc.id,
         ioc_type: ioc.ioc_type,
         ioc_value: ioc.ioc_value,
-        source: ioc.source,
+        source: (ioc as any).source ?? ioc.feed_id ?? 'unknown',
         threat_type: ioc.threat_type || 'unknown',
         confidence: ioc.confidence || 0,
         severity: ioc.severity || 'medium',

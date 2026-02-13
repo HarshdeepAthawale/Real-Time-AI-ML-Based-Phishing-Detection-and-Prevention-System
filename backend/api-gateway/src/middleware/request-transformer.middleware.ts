@@ -189,7 +189,7 @@ export function requestValidationMiddleware(
     const contentType = req.get('Content-Type');
     
     if (!contentType || !contentType.includes('application/json')) {
-      return res.status(415).json({
+      res.status(415).json({
         success: false,
         error: {
           message: 'Unsupported Media Type',
@@ -197,6 +197,7 @@ export function requestValidationMiddleware(
           details: 'Content-Type must be application/json'
         }
       });
+      return;
     }
   }
 
@@ -205,7 +206,7 @@ export function requestValidationMiddleware(
   const maxSize = 10 * 1024 * 1024; // 10MB
 
   if (contentLength > maxSize) {
-    return res.status(413).json({
+    res.status(413).json({
       success: false,
       error: {
         message: 'Payload Too Large',
@@ -213,6 +214,7 @@ export function requestValidationMiddleware(
         details: `Maximum payload size is ${maxSize} bytes`
       }
     });
+    return;
   }
 
   next();

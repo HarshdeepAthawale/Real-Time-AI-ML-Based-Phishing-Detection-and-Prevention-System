@@ -317,7 +317,7 @@ def train(
             torch.save({
                 "model_state_dict": model.state_dict(),
                 "model_config": {"num_classes": 2, "input_size": img_size},
-            }, os.path.join(output_dir, "model.pt"))
+            }, os.path.join(output_dir, "model.pth"))
 
             metrics = {"accuracy": acc, "precision": prec, "recall": rec, "f1": f1}
             with open(os.path.join(output_dir, "training_metrics.json"), "w") as f:

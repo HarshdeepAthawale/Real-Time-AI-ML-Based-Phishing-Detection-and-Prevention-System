@@ -6,7 +6,7 @@
 set -e
 
 API_BASE="${1:-http://localhost:3000}"
-API_KEY="${2:-${TEST_API_KEY}}"
+API_KEY="${2:-${TEST_API_KEY:-testkey_smoke_test_12345}}"
 
 if [ -z "$API_KEY" ]; then
   echo "WARNING: No API key. Set TEST_API_KEY or pass as second argument."

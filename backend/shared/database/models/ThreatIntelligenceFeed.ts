@@ -40,6 +40,9 @@ export class ThreatIntelligenceFeed {
   @Column({ type: 'boolean', default: true })
   is_active: boolean;
 
+  @Column({ type: 'int', default: 0 })
+  iocs_imported: number;
+
   @Column({ type: 'decimal', precision: 5, scale: 2, default: 50 })
   reliability_score: number;
 

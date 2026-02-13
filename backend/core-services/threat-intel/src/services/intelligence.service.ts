@@ -363,8 +363,14 @@ export class IntelligenceService {
    */
   private async syncURLhaus(): Promise<number> {
     const entries = await this.urlhausClient.getRecentURLs(1000);
-    const iocs = this.urlhausClient.extractIOCs(entries);
-    
+    const extracted = this.urlhausClient.extractIOCs(entries);
+    const iocs = {
+      urls: extracted.urls || [],
+      domains: extracted.domains || [],
+      ips: [] as string[],
+      hashes: [] as string[],
+      emails: [] as string[],
+    };
     return await this.saveIOCs('URLhaus', iocs);
   }
 

@@ -16,10 +16,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files and credentials (never commit secrets)
 .env*
 !.env.example
 !*.env.example
+.env.credentials
 
 # Python virtual environments
 venv/
@@ -52,3 +53,6 @@ backend/ml-services/**/models/**
 # Ignore CSV dataset files in ML services
 backend/ml-services/**/*.csv
 !backend/ml-services/**/*.csv.example
+
+# External cloned repositories (PhishIntention, URLNet, etc.)
+external/

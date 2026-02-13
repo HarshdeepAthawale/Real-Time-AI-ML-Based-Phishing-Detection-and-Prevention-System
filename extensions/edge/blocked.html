@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phishing Threat Blocked</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 600px;
+      text-align: center;
+    }
+    .shield {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 30px;
+      background: linear-gradient(135deg, #e74c3c, #c0392b);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 60px;
+      box-shadow: 0 0 40px rgba(231, 76, 60, 0.3);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 40px rgba(231, 76, 60, 0.3); }
+      50% { box-shadow: 0 0 60px rgba(231, 76, 60, 0.5); }
+    }
+    h1 {
+      font-size: 28px;
+      margin-bottom: 15px;
+      color: #e74c3c;
+    }
+    .subtitle {
+      font-size: 16px;
+      color: #a0a0b8;
+      margin-bottom: 30px;
+      line-height: 1.5;
+    }
+    .threat-info {
+      background: rgba(231, 76, 60, 0.1);
+      border: 1px solid rgba(231, 76, 60, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 30px;
+      text-align: left;
+    }
+    .threat-info .label {
+      color: #a0a0b8;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 5px;
+    }
+    .threat-info .value {
+      color: #ffffff;
+      font-size: 14px;
+      margin-bottom: 15px;
+      word-break: break-all;
+    }
+    .threat-info .value:last-child { margin-bottom: 0; }
+    .severity-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .severity-critical { background: #e74c3c; }
+    .severity-high { background: #e67e22; }
+    .severity-medium { background: #f39c12; }
+    .buttons {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 12px 28px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: #3498db;
+      color: white;
+    }
+    .btn-primary:hover { background: #2980b9; }
+    .btn-secondary {
+      background: transparent;
+      color: #a0a0b8;
+      border: 1px solid #a0a0b8;
+    }
+    .btn-secondary:hover { color: #ffffff; border-color: #ffffff; }
+    .btn-danger {
+      background: transparent;
+      color: #e74c3c;
+      border: 1px solid rgba(231, 76, 60, 0.3);
+      font-size: 12px;
+    }
+    .btn-danger:hover { border-color: #e74c3c; }
+    .footer {
+      margin-top: 40px;
+      font-size: 12px;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="shield">&#128737;</div>
+    <h1>Phishing Threat Blocked</h1>
+    <p class="subtitle">
+      The page you were trying to visit has been identified as a phishing threat by our AI/ML detection system.
+      For your safety, access has been blocked.
+    </p>
+
+    <div class="threat-info">
+      <div class="label">Blocked URL</div>
+      <div class="value" id="blocked-url">Loading...</div>
+
+      <div class="label">Threat Type</div>
+      <div class="value" id="threat-type">Phishing</div>
+
+      <div class="label">Severity</div>
+      <div class="value"><span class="severity-badge severity-critical" id="severity">Critical</span></div>
+
+      <div class="label">Confidence</div>
+      <div class="value" id="confidence">--</div>
+
+      <div class="label">Indicators</div>
+      <div class="value" id="indicators">--</div>
+    </div>
+
+    <div class="buttons">
+      <button class="btn btn-primary" id="go-back">Go Back to Safety</button>
+      <button class="btn btn-secondary" id="report-fp">Report False Positive</button>
+      <button class="btn btn-danger" id="proceed-anyway">Proceed Anyway (Unsafe)</button>
+    </div>
+
+    <div class="footer">
+      Protected by AI/ML Phishing Detection System
+    </div>
+  </div>
+
+  <script>
+    // Parse URL parameters
+    const params = new URLSearchParams(window.location.search);
+    const blockedUrl = params.get('url') || 'Unknown';
+    const threatType = params.get('type') || 'phishing';
+    const severity = params.get('severity') || 'critical';
+    const confidence = params.get('confidence') || '0';
+    const indicators = params.get('indicators') || '';
+
+    document.getElementById('blocked-url').textContent = blockedUrl;
+    document.getElementById('threat-type').textContent = threatType.replace(/_/g, ' ');
+    document.getElementById('confidence').textContent = `${Math.round(parseFloat(confidence) * 100)}%`;
+
+    const severityEl = document.getElementById('severity');
+    severityEl.textContent = severity;
+    severityEl.className = `severity-badge severity-${severity}`;
+
+    if (indicators) {
+      document.getElementById('indicators').textContent = indicators.split(',').join(', ');
+    }
+
+    // Button handlers (Edge uses chrome.* like Chromium)
+    document.getElementById('go-back').addEventListener('click', () => {
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.close();
+      }
+    });
+
+    document.getElementById('report-fp').addEventListener('click', () => {
+      chrome.runtime.sendMessage({
+        type: 'reportThreat',
+        data: {
+          url: blockedUrl,
+          reason: 'false_positive',
+          description: 'User reported as false positive from blocked page'
+        }
+      }, (response) => {
+        if (response && response.success) {
+          alert('Thank you! Your report has been submitted for review.');
+        } else {
+          alert('Failed to submit report. Please try again.');
+        }
+      });
+    });
+
+    document.getElementById('proceed-anyway').addEventListener('click', () => {
+      if (confirm('This site has been identified as a phishing threat. Are you absolutely sure you want to proceed?')) {
+        chrome.runtime.sendMessage({
+          type: 'allowlistUrl',
+          url: blockedUrl
+        }, () => {
+          window.location.href = blockedUrl;
+        });
+      }
+    });
+  </script>
+</body>
+</html>

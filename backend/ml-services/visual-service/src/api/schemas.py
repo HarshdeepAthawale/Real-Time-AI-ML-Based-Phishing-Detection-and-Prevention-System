@@ -42,6 +42,7 @@ class PageAnalysisResponse(BaseModel):
     url: str
     is_suspicious: bool
     suspicious_score: float
+    phishing_probability: Optional[float] = None  # 0-1 for decision engine ensemble
     confidence: float
     screenshot: Optional[str] = None  # Base64 encoded
     dom_analysis: Optional[Dict] = None

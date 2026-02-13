@@ -7,6 +7,7 @@ import Navigation from '@/components/navigation'
 import { FeedList } from '@/components/feeds/feed-list'
 import { FeedForm } from '@/components/feeds/feed-form'
 import { FeedStatus } from '@/components/feeds/feed-status'
+import { ApiKeyBanner } from '@/components/api-key-banner'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { ThreatFeed } from '@/lib/api/feeds'
@@ -39,6 +40,7 @@ export default function FeedsPage() {
         <Header />
         <div className="flex-1 overflow-y-auto">
           <div className="p-6 space-y-6">
+            <ApiKeyBanner />
             {/* Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">

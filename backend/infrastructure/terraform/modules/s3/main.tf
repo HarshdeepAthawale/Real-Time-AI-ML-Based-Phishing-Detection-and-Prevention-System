@@ -5,18 +5,27 @@ variable "environment" {
   type        = string
 }
 
+variable "account_id" {
+  description = "AWS account ID for unique bucket names (global namespace)"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Common tags"
   type        = map(string)
   default     = {}
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
+  suffix = var.account_id != "" ? var.account_id : data.aws_caller_identity.current.account_id
   bucket_names = {
-    models     = "phishing-detection-models-${var.environment}"
-    training   = "phishing-detection-training-data-${var.environment}"
-    logs       = "phishing-detection-logs-${var.environment}"
-    artifacts  = "phishing-detection-artifacts-${var.environment}"
+    models     = "phishing-detection-models-${var.environment}-${local.suffix}"
+    training   = "phishing-detection-training-data-${var.environment}-${local.suffix}"
+    logs       = "phishing-detection-logs-${var.environment}-${local.suffix}"
+    artifacts  = "phishing-detection-artifacts-${var.environment}-${local.suffix}"
   }
 }
 

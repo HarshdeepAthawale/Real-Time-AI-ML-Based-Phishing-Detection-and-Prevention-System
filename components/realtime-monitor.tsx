@@ -9,18 +9,30 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ErrorBoundary } from '@/components/error-boundary'
 
 export default function RealtimeMonitor() {
+  const [apiKey, setApiKey] = useState<string | undefined>()
+  const [organizationId, setOrganizationId] = useState<string | undefined>()
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setApiKey(localStorage.getItem('api_key') || undefined)
+      setOrganizationId(localStorage.getItem('organization_id') || undefined)
+    }
+  }, [])
+
   const { isConnected, events, connect, disconnect } = useWebSocket({
     autoConnect: true,
+    apiKey: apiKey || undefined,
+    organizationId: organizationId || undefined,
     onConnect: () => {
-      console.log('WebSocket connected');
+      if (process.env.NODE_ENV === 'development') console.log('WebSocket connected')
     },
     onDisconnect: () => {
-      console.log('WebSocket disconnected');
+      if (process.env.NODE_ENV === 'development') console.log('WebSocket disconnected')
     },
     onError: (error) => {
-      console.error('WebSocket error:', error);
+      console.error('WebSocket error:', error)
     },
-  });
+  })
 
   // Format events for display
   const displayEvents: LiveEvent[] = events.map((event) => ({
@@ -92,9 +104,9 @@ export default function RealtimeMonitor() {
           </div>
         </div>
         {!isConnected && (
-          <Alert className="mt-4">
+          <Alert className="mt-4" variant="destructive">
             <AlertDescription>
-              WebSocket disconnected. Attempting to reconnect...
+              WebSocket disconnected. Attempting to reconnect... Ensure API Base URL is http://localhost:3000 and a valid API key is saved in Settings (e.g. testkey_smoke_test_12345 for local dev).
             </AlertDescription>
           </Alert>
         )}

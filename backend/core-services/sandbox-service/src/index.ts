@@ -9,6 +9,7 @@ import { connectDatabase, disconnectDatabase, getDatabase } from './services/dat
 import { connectRedis, disconnectRedis, isRedisConnected, getRedis } from './services/redis.service';
 import { CuckooClient } from './integrations/cuckoo.client';
 import { AnyRunClient } from './integrations/anyrun.client';
+import { CuckooSandboxAdapter, AnyRunSandboxAdapter, DisabledSandboxAdapter } from './integrations/sandbox-adapters';
 import { BaseSandboxClient } from './integrations/base-sandbox.client';
 import { FileAnalyzerService } from './services/file-analyzer.service';
 import { SandboxSubmitterService } from './services/sandbox-submitter.service';
@@ -51,17 +52,16 @@ async function initializeApp(): Promise<void> {
     // Step 3: Initialize sandbox client based on configuration
     logger.info(`Initializing sandbox client: ${config.provider}`);
     if (config.provider === 'cuckoo') {
-      if (!config.cuckoo.url) {
-        throw new Error('CUCKOO_SANDBOX_URL is required');
-      }
-      sandboxClient = new CuckooClient(config.cuckoo.url, config.cuckoo.apiKey);
+      const cuckoo = new CuckooClient();
+      sandboxClient = new CuckooSandboxAdapter(cuckoo);
       logger.info('Cuckoo Sandbox client initialized');
     } else if (config.provider === 'anyrun') {
-      if (!config.anyrun.apiKey) {
-        throw new Error('ANYRUN_API_KEY is required');
-      }
-      sandboxClient = new AnyRunClient(config.anyrun.apiKey);
+      const anyrun = new AnyRunClient();
+      sandboxClient = new AnyRunSandboxAdapter(anyrun);
       logger.info('Any.run client initialized');
+    } else if (config.provider === 'disabled') {
+      sandboxClient = new DisabledSandboxAdapter();
+      logger.warn('Sandbox analysis DISABLED – no provider configured. Set ANYRUN_API_KEY or CUCKOO_SANDBOX_URL to enable.');
     } else {
       throw new Error(`Unknown sandbox provider: ${config.provider}`);
     }
@@ -93,7 +93,8 @@ async function initializeApp(): Promise<void> {
       submitterService,
       resultProcessorService,
       queueJob,
-      dataSource
+      dataSource,
+      config
     );
     app.use('/api/v1/sandbox', sandboxRoutes);
     
@@ -113,18 +114,26 @@ async function initializeApp(): Promise<void> {
 // Health check endpoint
 app.get('/health', async (req, res) => {
   try {
-    const dbConnected = getDatabase().isInitialized;
+    let dbConnected = false;
+    try {
+      dbConnected = getDatabase().isInitialized;
+    } catch {
+      dbConnected = false;
+    }
     const redisConnected = isRedisConnected();
+    const isDisabled = config.provider === 'disabled';
     
     const health = {
-      status: dbConnected && redisConnected ? 'healthy' : 'degraded',
+      status: isDisabled ? 'degraded' : (dbConnected && redisConnected ? 'healthy' : 'degraded'),
       service: 'sandbox-service',
       provider: config.provider,
+      sandboxEnabled: !isDisabled,
       database: dbConnected ? 'connected' : 'disconnected',
       redis: redisConnected ? 'connected' : 'disconnected',
       timestamp: new Date().toISOString(),
     };
     
+    // Report healthy even when disabled (service is running; analysis is just unavailable)
     const isHealthy = dbConnected && redisConnected;
     res.status(isHealthy ? 200 : 503).json(health);
   } catch (error: any) {

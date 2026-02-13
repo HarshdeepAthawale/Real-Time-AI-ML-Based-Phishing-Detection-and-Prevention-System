@@ -9,13 +9,11 @@ COPY core-services/detection-api/package*.json ./core-services/detection-api/
 WORKDIR /app/core-services/detection-api
 RUN npm ci
 
-# Copy shared package.json and merge dependencies (install into service node_modules)
-WORKDIR /app
-COPY shared/package.json ./shared/
-RUN cd shared && npm install --no-save --prefix ../core-services/detection-api 2>/dev/null || true
+# Copy detection-api source code (into current workdir)
+COPY core-services/detection-api ./
 
-# Copy detection-api source code
-COPY core-services/detection-api ./core-services/detection-api
+# Symlink so shared resolves deps from detection-api's node_modules (single typeorm)
+RUN ln -sf ../core-services/detection-api/node_modules /app/shared/node_modules
 
 # Build detection-api (shared will be compiled as part of this)
 WORKDIR /app/core-services/detection-api

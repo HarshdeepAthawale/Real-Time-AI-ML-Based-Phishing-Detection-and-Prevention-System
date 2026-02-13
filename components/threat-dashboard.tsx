@@ -8,6 +8,7 @@ import RecentThreats from '@/components/recent-threats'
 import { getDashboardStats, getThreatDistribution } from '@/lib/api/dashboard'
 import { DashboardStats, ThreatDistribution } from '@/lib/types/api'
 import { StatCardSkeleton } from '@/components/ui/loading'
+import Link from 'next/link'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { QuickActions } from '@/components/dashboard/quick-actions'
@@ -88,8 +89,15 @@ export default function ThreatDashboard() {
         </div>
 
         {error && (
-          <Alert>
-            <AlertDescription>{error}</AlertDescription>
+          <Alert variant="destructive">
+            <AlertDescription>
+              {error}
+              {' '}
+              <Link href="/settings" className="underline font-medium hover:text-destructive-foreground">
+                Check Settings
+              </Link>
+              {' '}to configure your API key and URL.
+            </AlertDescription>
           </Alert>
         )}
 

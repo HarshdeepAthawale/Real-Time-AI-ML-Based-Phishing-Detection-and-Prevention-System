@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export interface SandboxConfig {
-  provider: 'cuckoo' | 'anyrun';
+  provider: 'cuckoo' | 'anyrun' | 'disabled';
   cuckoo: {
     url?: string;
     apiKey?: string;
@@ -34,15 +34,17 @@ const getConfig = (): SandboxConfig => {
     }
   }
 
-  const provider = (process.env.SANDBOX_PROVIDER || 'anyrun') as 'cuckoo' | 'anyrun';
+  let provider = (process.env.SANDBOX_PROVIDER || 'anyrun') as 'cuckoo' | 'anyrun' | 'disabled';
   
-  // Validate required configuration
+  // Auto-disable if required keys are missing
   if (provider === 'cuckoo' && !process.env.CUCKOO_SANDBOX_URL) {
-    throw new Error('CUCKOO_SANDBOX_URL is required when SANDBOX_PROVIDER=cuckoo');
+    console.warn('CUCKOO_SANDBOX_URL not set; sandbox analysis disabled. Set SANDBOX_PROVIDER=disabled to silence this warning.');
+    provider = 'disabled';
   }
   
   if (provider === 'anyrun' && !process.env.ANYRUN_API_KEY) {
-    throw new Error('ANYRUN_API_KEY is required when SANDBOX_PROVIDER=anyrun');
+    console.warn('ANYRUN_API_KEY not set; sandbox analysis disabled. Set SANDBOX_PROVIDER=disabled to silence this warning.');
+    provider = 'disabled';
   }
 
   return {

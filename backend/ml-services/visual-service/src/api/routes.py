@@ -108,9 +108,10 @@ async def analyze_page(request: PageAnalysisRequest):
         
         suspicious_score = min(100.0, suspicious_score)
         is_suspicious = suspicious_score > 50.0
-        
+        phishing_probability = suspicious_score / 100.0  # 0-1 for decision engine
+
         processing_time = (time.time() - start_time) * 1000
-        
+
         # Prepare screenshot (base64 if requested)
         screenshot_base64 = None
         if request.include_screenshot and screenshot_bytes:
@@ -121,6 +122,7 @@ async def analyze_page(request: PageAnalysisRequest):
             url=request.url,
             is_suspicious=is_suspicious,
             suspicious_score=suspicious_score,
+            phishing_probability=phishing_probability,
             confidence=abs(suspicious_score - 50.0) / 50.0,  # Normalized to 0-1
             screenshot=screenshot_base64,
             dom_analysis=dom_analysis,

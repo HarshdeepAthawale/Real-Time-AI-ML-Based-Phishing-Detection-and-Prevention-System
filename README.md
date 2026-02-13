@@ -192,6 +192,39 @@ The platform analyzes emails, URLs, and web content using an ensemble of machine
 - **Sandbox Service**: Dynamic analysis of suspicious content
 - **Learning Pipeline**: Automated model training and deployment
 
+## Quick Start (Docker Compose)
+
+Run the full stack (frontend + backend + databases) with Docker Compose:
+
+```bash
+# 1. Copy environment file and set required variables
+cp .env.example .env
+# Edit .env and set POSTGRES_PASSWORD to a secure value
+
+# 2. Set up ML models (REQUIRED before first run)
+./scripts/setup-ml-models.sh
+
+# 3. Build and start all services
+docker compose up --build
+# By default starts minimal stack (core detection). For full stack (threat-intel, extension-api, sandbox, learning-pipeline):
+# docker compose --profile full up --build
+
+# Access:
+# - Frontend: http://localhost:3080
+# - API Gateway: http://localhost:3000
+# - Detection API: http://localhost:3001
+```
+
+**API key for smoke/integration tests:** On first run, the database seeds a test API key. Use `TEST_API_KEY=testkey_smoke_test_12345` when running `./scripts/smoke-test.sh` or integration tests. See [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md) for details.
+
+The root `docker-compose.yml` includes the backend stack and adds the Next.js frontend. Backend services (API gateway, detection API, threat intel, ML services) run on their standard ports. See [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md) for detailed configuration and environment variables.
+
+## Project Status
+
+See [docs/PROJECT_COMPLETION_STATUS.md](docs/PROJECT_COMPLETION_STATUS.md) for a full completion checklist.
+
+**Quick status:** Backend services, frontend pages, browser extension, Docker setup, CI/CD, and documentation are complete. E2E smoke tests (`npm run test:e2e`) and sandbox disabled-state UX are implemented.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

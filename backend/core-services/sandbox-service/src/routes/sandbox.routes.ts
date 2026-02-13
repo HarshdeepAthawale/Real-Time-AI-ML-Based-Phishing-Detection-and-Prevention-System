@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { SandboxQueueJob } from '../jobs/sandbox-queue.job';
 import { DataSource } from 'typeorm';
 import { SandboxAnalysis } from '../../../../shared/database/models/SandboxAnalysis';
+import type { SandboxConfig } from '../config';
 
 const router = Router();
 
@@ -29,9 +30,24 @@ export function setupSandboxRoutes(
   submitterService: SandboxSubmitterService,
   resultProcessorService: ResultProcessorService,
   queueJob: SandboxQueueJob,
-  dataSource: DataSource
+  dataSource: DataSource,
+  sandboxConfig: SandboxConfig
 ): Router {
   const sandboxRepository = dataSource.getRepository(SandboxAnalysis);
+
+  /**
+   * GET /api/v1/sandbox/status
+   * Get sandbox service status (enabled/disabled, provider)
+   */
+  router.get('/status', (_req: Request, res: Response) => {
+    res.json({
+      sandboxEnabled: sandboxConfig.provider !== 'disabled',
+      provider: sandboxConfig.provider,
+      message: sandboxConfig.provider === 'disabled'
+        ? 'Sandbox analysis requires ANYRUN_API_KEY or CUCKOO_SANDBOX_URL. Set one to enable.'
+        : undefined,
+    });
+  });
 
   /**
    * POST /api/v1/sandbox/analyze/file

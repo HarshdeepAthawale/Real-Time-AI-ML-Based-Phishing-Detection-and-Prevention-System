@@ -363,7 +363,7 @@ export class EmailClientService extends EventEmitter {
       throw new Error(`Gmail OAuth token exchange failed: ${error}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as { access_token: string; refresh_token: string; expires_in: number };
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
@@ -392,7 +392,7 @@ export class EmailClientService extends EventEmitter {
         throw new Error(`Gmail API error: ${listResponse.status}`);
       }
 
-      const listData = await listResponse.json();
+      const listData = await listResponse.json() as { messages?: Array<{ id: string }> };
       const messages = listData.messages || [];
 
       for (const msg of messages) {
@@ -403,7 +403,7 @@ export class EmailClientService extends EventEmitter {
           );
 
           if (!msgResponse.ok) continue;
-          const msgData = await msgResponse.json();
+          const msgData = await msgResponse.json() as { payload?: { headers?: Array<{ name: string; value: string }>; body?: { data?: string }; parts?: Array<{ mimeType: string; body?: { data?: string } }> } };
 
           // Extract headers
           const headers = msgData.payload?.headers || [];
@@ -507,7 +507,7 @@ export class EmailClientService extends EventEmitter {
       throw new Error(`Outlook OAuth token exchange failed: ${error}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as { access_token: string; refresh_token: string; expires_in: number };
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
@@ -535,7 +535,7 @@ export class EmailClientService extends EventEmitter {
         throw new Error(`Microsoft Graph API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as { value?: Array<{ id?: string; subject?: string; from?: { emailAddress?: { address?: string } }; body?: { content?: string }; bodyPreview?: string }> };
       const messages = data.value || [];
 
       for (const msg of messages) {

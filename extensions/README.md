@@ -2,6 +2,12 @@
 
 This directory contains browser extensions for Chrome, Firefox, and Edge that integrate with the Extension API service to provide real-time phishing detection.
 
+## Browser Support
+
+- **Chrome** (primary target): Full feature parity, including navigation blocking and `declarativeNetRequest`-based proactive blocking.
+- **Edge**: Full parity with Chrome. Edge is Chromium-based and supports the same APIs.
+- **Firefox**: Full blocking support via `webNavigation`; no `declarativeNetRequest` (MV2). Limited support compared to Chrome—use Chrome for the best experience.
+
 ## Structure
 
 - `chrome/` - Chrome extension (Manifest V3)
@@ -45,6 +51,8 @@ This directory contains browser extensions for Chrome, Firefox, and Edge that in
 ## Features
 
 - **Real-time URL checking**: Automatically checks URLs when pages load
+- **Navigation blocking**: Redirects to `blocked.html` when threats meet severity threshold (Chrome/Edge: `declarativeNetRequest`; Firefox: `webNavigation`)
+- **Proceed anyway / allowlist**: Users can temporarily bypass a block; URL is removed from blocklist
 - **Form detection**: Detects suspicious forms with password fields
 - **Visual warnings**: Shows warning banners for detected threats
 - **Threat reporting**: Allows users to report suspected phishing sites
@@ -80,3 +88,4 @@ To modify the extensions:
 - The extensions use the same codebase with minor API differences (Chrome/Edge use `chrome.*`, Firefox uses `browser.*`)
 - Manifest versions differ: Chrome/Edge use V3, Firefox uses V2
 - Service workers are used for Chrome/Edge, background scripts for Firefox
+- Edge and Firefox load API URL/API key from storage correctly; defaults to `http://localhost:3003/api/v1/extension` when unset

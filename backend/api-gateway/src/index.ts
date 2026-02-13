@@ -16,8 +16,12 @@ const PORT = process.env.PORT || 3000;
 
 // Security middleware
 app.use(helmet());
+// CORS: allow frontend origin for WebSocket. Avoid origin:'*' with credentials (invalid per spec)
+const corsOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+  : ['http://localhost:3080', 'http://localhost:3000', 'http://127.0.0.1:3080', 'http://127.0.0.1:3000'];
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
   credentials: true
 }));
 
@@ -51,7 +55,7 @@ app.use('/socket.io', createProxyMiddleware({
     if (orgId) {
       proxyReq.setHeader('X-Organization-ID', orgId);
     }
-  }
+  },
 }));
 
 // API routes

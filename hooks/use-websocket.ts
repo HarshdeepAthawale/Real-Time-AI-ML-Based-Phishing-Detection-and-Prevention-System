@@ -4,16 +4,27 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { LiveEvent } from '@/lib/types/api';
 
-// Socket.io uses HTTP/HTTPS URLs, not ws:// URLs
-// It will automatically upgrade to WebSocket
-// Connect through API Gateway for proper routing and authentication
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || API_URL;
+// Socket.io uses HTTP/HTTPS URLs, not ws:// URLs - it auto-upgrades to WebSocket
+// Runtime URLs from localStorage override build-time NEXT_PUBLIC_*
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const DEFAULT_WS_URL = process.env.NEXT_PUBLIC_WS_URL || DEFAULT_API_URL;
+
+function getRuntimeWsUrl(wsUrlOverride?: string): string {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('ws_url');
+    if (stored?.trim()) return stored.trim();
+    const apiUrl = localStorage.getItem('api_url');
+    if (apiUrl?.trim()) return apiUrl.trim(); // WS typically same as API
+  }
+  return wsUrlOverride || DEFAULT_WS_URL;
+}
 
 interface UseWebSocketOptions {
   autoConnect?: boolean;
   organizationId?: string;
   apiKey?: string;
+  /** Override WebSocket URL (default: localStorage ws_url or api_url) */
+  wsUrl?: string;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Error) => void;
@@ -47,6 +58,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     autoConnect = true,
     organizationId,
     apiKey,
+    wsUrl,
     onConnect,
     onDisconnect,
     onError,
@@ -71,7 +83,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       socketRef.current = null;
     }
 
-    const socket = io(WS_URL, {
+    const url = wsUrl ?? getRuntimeWsUrl();
+    const socket = io(url, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: maxReconnectAttempts,
@@ -234,7 +247,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     });
 
     socketRef.current = socket;
-  }, [organizationId, apiKey, onConnect, onDisconnect, onError]);
+  }, [organizationId, apiKey, wsUrl, onConnect, onDisconnect, onError]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {

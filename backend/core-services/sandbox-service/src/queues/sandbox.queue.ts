@@ -50,9 +50,9 @@ export class SandboxQueue {
     this.anyrunClient = new AnyRunClient();
     this.cuckooClient = new CuckooClient();
 
-    // Create queue
+    // Create queue (cast connection to avoid ioredis/bullmq version mismatch)
     this.queue = new Queue<SandboxJobData, SandboxJobResult>('sandbox-analysis', {
-      connection: this.redisConnection,
+      connection: this.redisConnection as any,
       defaultJobOptions: {
         attempts: 3,
         backoff: {
@@ -69,12 +69,12 @@ export class SandboxQueue {
       }
     });
 
-    // Create worker
+    // Create worker (cast connection to avoid ioredis/bullmq version mismatch)
     this.worker = new Worker<SandboxJobData, SandboxJobResult>(
       'sandbox-analysis',
       async (job: Job<SandboxJobData>) => this.processJob(job),
       {
-        connection: this.redisConnection,
+        connection: this.redisConnection as any,
         concurrency: 5, // Process 5 jobs concurrently
         limiter: {
           max: 10, // Max 10 jobs
@@ -83,9 +83,9 @@ export class SandboxQueue {
       }
     );
 
-    // Create queue events listener
+    // Create queue events listener (cast connection to avoid ioredis/bullmq version mismatch)
     this.queueEvents = new QueueEvents('sandbox-analysis', {
-      connection: this.redisConnection
+      connection: this.redisConnection as any
     });
 
     this.setupEventListeners();
@@ -328,18 +328,23 @@ export class SandboxQueue {
       const dataSource = getPostgreSQL();
       const repository = dataSource.getRepository(SandboxAnalysis);
 
+      const existing = await repository.findOne({ where: { id: analysisId } });
+      const resultData = (existing?.result_data || {}) as Record<string, any>;
+      resultData.sandbox = result.analysis;
+      resultData.task_id = result.taskId?.toString();
+      resultData.risk_score = result.score;
+      resultData.malware_family = result.analysis?.malwareFamily;
+      resultData.behavioral = result.analysis?.behavioral || {};
+      resultData.network = result.analysis?.network || {};
+      resultData.processes = result.analysis?.processes || [];
+      if (!result.success) resultData.error = result.analysis?.error || 'Analysis failed';
+
       await repository.update(analysisId, {
         status: result.success ? 'completed' : 'failed',
-        submission_id: result.taskId.toString(),
+        sandbox_job_id: result.taskId?.toString() || existing?.sandbox_job_id,
         sandbox_provider: result.provider,
-        analysis_result: result.analysis,
-        risk_score: result.score,
-        malware_family: result.analysis.malwareFamily,
-        behavioral_indicators: result.analysis.behavioral || {},
-        network_connections: result.analysis.network || {},
-        processes: result.analysis.processes || [],
+        result_data: resultData,
         completed_at: new Date(),
-        error_message: result.success ? null : (result.analysis?.error || 'Analysis failed')
       });
 
       logger.info(`Updated sandbox analysis in database: ${analysisId}`);

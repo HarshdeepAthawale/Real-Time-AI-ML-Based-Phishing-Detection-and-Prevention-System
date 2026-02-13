@@ -9,10 +9,28 @@ import {
   IOCBulkCheckRequest,
   IOCBulkCheckResponse,
   IOCType,
-  Severity 
+  Severity,
+  IOC
 } from '../models/ioc.model';
+import { IOCMatchResult } from '../services/ioc-matcher.service';
 import { validateBody, validateQuery } from '../middleware/validation.middleware';
 import { logger } from '../utils/logger';
+
+function matchResultToIOC(match: IOCMatchResult): IOC | undefined {
+  if (!match.found || match.matches.length === 0) return undefined;
+  const m = match.matches[0];
+  return {
+    id: m.id,
+    iocType: m.ioc_type as IOCType,
+    iocValue: m.ioc_value,
+    threatType: m.threat_type,
+    severity: m.severity as Severity | null,
+    confidence: m.confidence,
+    firstSeenAt: m.first_seen_at,
+    lastSeenAt: m.last_seen_at,
+    source: m.source,
+  };
+}
 
 const router = Router();
 
@@ -52,16 +70,17 @@ router.post('/check', validateBody(checkIOCSchema), async (req: Request, res: Re
     const iocMatcher = req.app.get('iocMatcher') as IOCMatcherService;
     const match = await iocMatcher.matchIOC(iocType, iocValue);
     
+    const ioc = matchResultToIOC(match);
     const response: IOCCheckResponse & { enrichment?: any } = {
-      found: !!match,
-      ioc: match || undefined,
-      confidence: match?.confidence || undefined,
+      found: !!match.found,
+      ioc,
+      confidence: ioc?.confidence ?? undefined,
     };
     
     // Enrich if requested and IOC found
-    if (enrich && match) {
+    if (enrich && ioc) {
       const enrichmentService = req.app.get('enrichmentService') as EnrichmentService;
-      const enrichment = await enrichmentService.enrichIOC(match);
+      const enrichment = await enrichmentService.enrichIOC(ioc);
       if (enrichment.enriched) {
         response.enrichment = enrichment.additionalContext;
       }
@@ -85,10 +104,11 @@ router.post('/bulk-check', validateBody(bulkCheckIOCSchema), async (req: Request
     for (const ioc of iocs) {
       try {
         const match = await iocMatcher.matchIOC(ioc.iocType, ioc.iocValue);
+        const mapped = matchResultToIOC(match);
         results.push({
-          found: !!match,
-          ioc: match || undefined,
-          confidence: match?.confidence || undefined,
+          found: !!match.found,
+          ioc: mapped,
+          confidence: mapped?.confidence ?? undefined,
         });
       } catch (error) {
         logger.error(`Bulk check error for IOC: ${ioc.iocValue}`, error);

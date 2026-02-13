@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { Upload, LinkIcon, File, X } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Upload, LinkIcon, File, X, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { submitFileForAnalysis, submitURLForAnalysis } from '@/lib/api/sandbox'
+import { submitFileForAnalysis, submitURLForAnalysis, getSandboxStatus } from '@/lib/api/sandbox'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/loading'
 
@@ -20,7 +20,19 @@ export function SandboxSubmit({ onSubmissionSuccess }: SandboxSubmitProps) {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sandboxEnabled, setSandboxEnabled] = useState<boolean | null>(null)
+  const [sandboxMessage, setSandboxMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    getSandboxStatus().then((status) => {
+      setSandboxEnabled(status.sandboxEnabled)
+      setSandboxMessage(status.message || null)
+    }).catch(() => {
+      setSandboxEnabled(false)
+      setSandboxMessage('Unable to reach sandbox service')
+    })
+  }, [])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -76,6 +88,8 @@ export function SandboxSubmit({ onSubmissionSuccess }: SandboxSubmitProps) {
     }
   }
 
+  const isDisabled = sandboxEnabled === false
+
   return (
     <Card>
       <CardHeader>
@@ -85,6 +99,14 @@ export function SandboxSubmit({ onSubmissionSuccess }: SandboxSubmitProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {isDisabled && sandboxMessage && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Sandbox analysis is currently disabled. {sandboxMessage}
+            </AlertDescription>
+          </Alert>
+        )}
         <Tabs defaultValue="file" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="file">File</TabsTrigger>
@@ -149,7 +171,7 @@ export function SandboxSubmit({ onSubmissionSuccess }: SandboxSubmitProps) {
 
             <Button
               onClick={handleFileSubmit}
-              disabled={loading || !selectedFile}
+              disabled={loading || !selectedFile || isDisabled}
               className="w-full"
             >
               {loading ? (
@@ -187,7 +209,7 @@ export function SandboxSubmit({ onSubmissionSuccess }: SandboxSubmitProps) {
 
             <Button
               onClick={handleURLSubmit}
-              disabled={loading || !url.trim()}
+              disabled={loading || !url.trim() || isDisabled}
               className="w-full"
             >
               {loading ? (

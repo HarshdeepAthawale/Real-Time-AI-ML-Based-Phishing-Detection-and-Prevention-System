@@ -18,6 +18,7 @@ import iocRoutes from './routes/ioc.routes';
 import feedsRoutes from './routes/feeds.routes';
 import syncRoutes from './routes/sync.routes';
 import intelligenceRoutes from './routes/intelligence.routes';
+import threatIntelRoutes from './routes/threat-intel.routes';
 
 const app = express();
 
@@ -113,6 +114,7 @@ app.use('/api/v1/ioc', iocRoutes);
 app.use('/api/v1/feeds', feedsRoutes);
 app.use('/api/v1/sync', syncRoutes);
 app.use('/api/v1/intelligence', intelligenceRoutes);
+app.use('/api/v1/intelligence', threatIntelRoutes);
 
 // Health check endpoint
 app.get('/health', async (req, res) => {

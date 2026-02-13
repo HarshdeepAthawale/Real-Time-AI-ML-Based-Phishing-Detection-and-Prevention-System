@@ -1,19 +1,19 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy shared package.json and install dependencies
-COPY shared/package*.json ./shared/
-RUN cd shared && npm ci
-
-# Copy threat-intel package.json and install dependencies
-COPY core-services/threat-intel/package*.json ./core-services/threat-intel/
-RUN cd core-services/threat-intel && npm ci
-
 # Copy shared source code
 COPY shared ./shared
 
-# Copy threat-intel source code
-COPY core-services/threat-intel ./core-services/threat-intel
+# Copy threat-intel package.json and install dependencies
+COPY core-services/threat-intel/package*.json ./core-services/threat-intel/
+WORKDIR /app/core-services/threat-intel
+RUN npm ci
+
+# Copy threat-intel source code (into current workdir)
+COPY core-services/threat-intel ./
+
+# Symlink so shared resolves deps from threat-intel's node_modules
+RUN ln -sf ../core-services/threat-intel/node_modules /app/shared/node_modules
 
 # Build threat-intel (shared will be compiled as part of this)
 WORKDIR /app/core-services/threat-intel

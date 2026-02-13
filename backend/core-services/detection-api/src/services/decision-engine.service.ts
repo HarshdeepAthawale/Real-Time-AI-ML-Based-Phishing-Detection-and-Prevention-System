@@ -100,14 +100,14 @@ export class DecisionEngineService {
       if (visualData.phishing_probability !== undefined) {
         scores.visual = visualData.phishing_probability;
       } else {
-        if (visualData.form_analysis?.is_suspicious) {
-          scores.visual += 0.4;
+      if (visualData.form_analysis?.is_suspicious) {
+        scores.visual += 0.4;
         }
-        if (visualData.brand_prediction?.is_brand_impersonation) {
+        if (visualData.brand_detection?.is_impersonation) {
           scores.visual += 0.3;
         }
-        if (visualData.similarity_analysis?.is_similar && 
-            visualData.similarity_analysis?.similarity_score < 0.9) {
+        if (visualData.visual_similarity?.is_similar && 
+            (visualData.visual_similarity?.similarity_score ?? 1) < 0.9) {
           scores.visual += 0.2; // Similar but not identical = suspicious
         }
         scores.visual = Math.min(1.0, scores.visual);
@@ -220,7 +220,7 @@ export class DecisionEngineService {
     if (mlResponse.visual?.form_analysis?.is_suspicious) {
       indicators.push('credential_harvesting_form');
     }
-    if (mlResponse.visual?.brand_prediction?.is_brand_impersonation) {
+    if (mlResponse.visual?.brand_detection?.is_impersonation) {
       indicators.push('brand_impersonation');
     }
     
