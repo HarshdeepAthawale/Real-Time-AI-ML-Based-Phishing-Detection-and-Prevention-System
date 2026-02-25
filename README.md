@@ -192,9 +192,9 @@ The platform analyzes emails, URLs, and web content using an ensemble of machine
 - **Sandbox Service**: Dynamic analysis of suspicious content
 - **Learning Pipeline**: Automated model training and deployment
 
-## Quick Start (Docker Compose)
+## Quick Start (Docker Compose) — run locally
 
-Run the full stack (frontend + backend + databases) with Docker Compose:
+Run the full stack (frontend + backend + ML services + databases) locally with Docker Compose:
 
 ```bash
 # 1. Copy environment file and set required variables
@@ -205,15 +205,20 @@ cp .env.example .env
 ./scripts/setup-ml-models.sh
 
 # 3. Build and start all services
-docker compose up --build
-# By default starts minimal stack (core detection). For full stack (threat-intel, extension-api, sandbox, learning-pipeline):
-# docker compose --profile full up --build
+./scripts/start-local.sh
+# Or: docker compose up --build
+# Background: docker compose up --build -d
 
 # Access:
-# - Frontend: http://localhost:3080
+# - Frontend:    http://localhost:3080
 # - API Gateway: http://localhost:3000
-# - Detection API: http://localhost:3001
+# - Detection:   http://localhost:3001
+# - NLP:         http://localhost:8000
+# - URL:         http://localhost:8001
+# - Visual:      http://localhost:8002
 ```
+
+Check status: `docker compose ps`. Stop: `docker compose down`.
 
 **API key for smoke/integration tests:** On first run, the database seeds a test API key. Use `TEST_API_KEY=testkey_smoke_test_12345` when running `./scripts/smoke-test.sh` or integration tests. See [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md) for details.
 

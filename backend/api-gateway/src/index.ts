@@ -66,4 +66,10 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`API Gateway running on port ${PORT}`);
+
+  // Warn about insecure JWT secret in development
+  const jwtSecret = process.env.JWT_SECRET || '';
+  if (!jwtSecret || jwtSecret.includes('change') || jwtSecret.includes('CHANGE') || jwtSecret.length < 32) {
+    console.warn('WARNING: JWT_SECRET is not set or uses an insecure default. Set a strong secret before deploying to production.');
+  }
 });

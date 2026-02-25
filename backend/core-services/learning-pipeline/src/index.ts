@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import express from 'express';
 import { S3Client } from '@aws-sdk/client-s3';
 import { ECSClient } from '@aws-sdk/client-ecs';
 import { connectPostgreSQL, connectAllDatabases, disconnectAllDatabases } from '../../../shared/database/connection';
@@ -12,6 +13,7 @@ import { TrainingOrchestratorService } from './services/training-orchestrator.se
 import { ValidatorService } from './services/validator.service';
 import { DriftDetectorService } from './services/drift-detector.service';
 import { DeploymentService } from './services/deployment.service';
+import { LocalTrainingService } from './services/local-training.service';
 
 // Jobs
 import { ScheduledTrainingJob } from './jobs/scheduled-training.job';
@@ -37,6 +39,7 @@ let trainingOrchestrator: TrainingOrchestratorService | null = null;
 let validator: ValidatorService | null = null;
 let driftDetector: DriftDetectorService;
 let deployment: DeploymentService | null = null;
+let localTraining: LocalTrainingService | null = null;
 let scheduledTrainingJob: ScheduledTrainingJob | null = null;
 let driftCheckJob: DriftCheckJob;
 
@@ -93,14 +96,18 @@ async function initializeServices(): Promise<void> {
 
       logger.info('All services initialized successfully (AWS mode)');
     } else {
-      // Local mode: no S3/ECS, drift detector only
+      // Local mode: no S3/ECS, use local training service
       logger.info('Learning pipeline running in local mode - S3/ECS disabled');
-      logger.info('Set AWS_ACCESS_KEY_ID or AWS_ENABLED=true to enable training pipeline');
+      logger.info('Set AWS_ACCESS_KEY_ID or AWS_ENABLED=true to enable cloud training');
+
+      // Initialize local training service
+      localTraining = new LocalTrainingService(config);
+      logger.info('Local training service initialized');
 
       // Drift check without retraining (DB-only)
       driftCheckJob = new DriftCheckJob(driftDetector);
 
-      logger.info('Services initialized (local mode - drift detection only)');
+      logger.info('Services initialized (local mode - local training + drift detection)');
     }
   } catch (error: any) {
     logger.error(`Failed to initialize services: ${error.message}`, error);
@@ -165,6 +172,76 @@ async function main(): Promise<void> {
     // Handle shutdown signals
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
+
+    // Start Express API for health checks and local training triggers
+    const app = express();
+    app.use(express.json());
+    const LP_PORT = parseInt(process.env.LP_PORT || '3005', 10);
+
+    app.get('/health', (_req, res) => {
+      res.json({
+        status: 'healthy',
+        service: 'learning-pipeline',
+        mode: isAwsEnabled() ? 'aws' : 'local',
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    app.get('/api/learning/status', (_req, res) => {
+      res.json({
+        mode: isAwsEnabled() ? 'aws' : 'local',
+        aws_enabled: isAwsEnabled(),
+        local_training_available: localTraining !== null,
+        training_status: localTraining?.getStatus() || null,
+        drift_detector_active: driftDetector !== null,
+        scheduled_training_active: scheduledTrainingJob !== null,
+      });
+    });
+
+    app.post('/api/learning/retrain', async (req, res) => {
+      const { modelType } = req.body;
+
+      if (!modelType || !['nlp', 'url', 'visual'].includes(modelType)) {
+        res.status(400).json({ error: 'modelType must be one of: nlp, url, visual' });
+        return;
+      }
+
+      if (isAwsEnabled() && trainingOrchestrator) {
+        try {
+          const jobId = await trainingOrchestrator.triggerTraining({
+            modelType,
+            datasetPath: `s3://${config.aws.s3.training}/latest/${modelType}`,
+          });
+          res.json({ mode: 'aws', jobId, status: 'started' });
+        } catch (error: any) {
+          res.status(500).json({ error: error.message });
+        }
+      } else if (localTraining) {
+        try {
+          const result = await localTraining.triggerTraining(modelType);
+          res.json({ mode: 'local', ...result });
+        } catch (error: any) {
+          res.status(500).json({ error: error.message });
+        }
+      } else {
+        res.status(503).json({ error: 'No training backend available. Configure AWS or ensure local training is set up.' });
+      }
+    });
+
+    app.get('/api/learning/drift', async (_req, res) => {
+      try {
+        const results = await driftDetector.checkAllModels();
+        const output: Record<string, any> = {};
+        results.forEach((value, key) => { output[key] = value; });
+        res.json(output);
+      } catch (error: any) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    app.listen(LP_PORT, () => {
+      logger.info(`Learning Pipeline API running on port ${LP_PORT}`);
+    });
 
     logger.info('Learning Pipeline service started successfully');
     logger.info(`Training schedule: ${process.env.TRAINING_SCHEDULE || '0 2 * * 0'}`);

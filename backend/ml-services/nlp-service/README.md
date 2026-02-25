@@ -31,6 +31,7 @@ Analyze plain text for phishing indicators.
   "legitimate_probability": 0.13,
   "confidence": 0.74,
   "prediction": "phishing",
+  "ai_generated_probability": 0.92,
   "urgency_score": 75,
   "sentiment": "NEGATIVE",
   "social_engineering_score": 68,
@@ -69,12 +70,14 @@ pip install -r requirements.txt
 
 ## Running Locally
 
+When run from the `nlp-service` directory, `MODEL_DIR` defaults to `./models` (the service's `models/` folder), so no extra env is needed if your trained model is in `models/phishing-detector/`.
+
 ```bash
-# Set environment variables
-export MODEL_DIR=/app/models
+# Optional: set if using a different model location
+# export MODEL_DIR=/path/to/models
 export REDIS_URL=redis://localhost:6379
 
-# Run service
+# Run service (from backend/ml-services/nlp-service)
 uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -90,23 +93,30 @@ docker run -p 8000:8000 \
 
 ## Model Placement
 
-Place your trained models in:
+Place your trained models in `models/` (or set `MODEL_DIR` to that directory). Example layout:
 ```
 models/
 ├── phishing-detector/
-│   ├── pytorch_model.bin
 │   ├── config.json
+│   ├── model.safetensors   # or pytorch_model.bin
 │   ├── tokenizer.json
-│   └── vocab.txt
+│   └── tokenizer_config.json
 └── ai-detector/
-    ├── pytorch_model.bin
-    └── config.json
+    ├── config.json
+    ├── model.safetensors
+    ├── tokenizer.json
+    └── tokenizer_config.json
+```
+
+To install the Colab-trained **ai-detector** (second model) from a local folder or zip:
+```bash
+./scripts/download-trained-models.sh --from-dir /path/to/containing/folder
 ```
 
 ## Configuration
 
 Environment variables:
-- `MODEL_DIR`: Directory containing model files (default: `/app/models`)
+- `MODEL_DIR`: Directory containing model files (default: local `models/` if present, else `/app/models`)
 - `REDIS_URL`: Redis connection URL
 - `MONGODB_URL`: MongoDB connection URL
 - `INFERENCE_DEVICE`: `cpu` or `cuda` (default: `cpu`)

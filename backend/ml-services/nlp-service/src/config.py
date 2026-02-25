@@ -11,8 +11,9 @@ class Settings(BaseSettings):
     service_version: str = "1.0.0"
     port: int = 8000
     
-    # Model paths
-    model_dir: str = os.getenv("MODEL_DIR", "/app/models")
+    # Model paths: use MODEL_DIR, or local models/ next to service, or Docker default
+    _default_model_dir: str = os.path.join(os.path.dirname(__file__), "..", "models")
+    model_dir: str = os.getenv("MODEL_DIR") or (_default_model_dir if os.path.isdir(_default_model_dir) else "/app/models")
     phishing_model_path: str = os.path.join(model_dir, "phishing-detector")
     ai_detector_model_path: str = os.path.join(model_dir, "ai-detector")
     

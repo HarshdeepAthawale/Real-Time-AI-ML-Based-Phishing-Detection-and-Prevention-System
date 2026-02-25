@@ -41,8 +41,35 @@ export interface Config {
   };
 }
 
+const INSECURE_DEFAULTS = [
+  'change-me-in-production',
+  'your-jwt-secret-change-in-production',
+  'your-encryption-key-change-in-production',
+  'CHANGE_ME_MIN_32_CHARS_RANDOM_STRING',
+  'CHANGE_ME',
+];
+
 const getConfig = (): Config => {
   const environment = process.env.NODE_ENV || 'development';
+
+  // Enforce secure secrets in production
+  if (environment === 'production') {
+    const jwtSecret = process.env.JWT_SECRET || '';
+    const encryptionKey = process.env.API_KEY_ENCRYPTION_KEY || '';
+
+    if (!jwtSecret || INSECURE_DEFAULTS.includes(jwtSecret)) {
+      console.error('FATAL: JWT_SECRET is not configured or uses an insecure default. Refusing to start in production.');
+      process.exit(1);
+    }
+    if (jwtSecret.length < 32) {
+      console.error('FATAL: JWT_SECRET must be at least 32 characters. Refusing to start in production.');
+      process.exit(1);
+    }
+    if (!encryptionKey || INSECURE_DEFAULTS.includes(encryptionKey)) {
+      console.error('FATAL: API_KEY_ENCRYPTION_KEY is not configured or uses an insecure default. Refusing to start in production.');
+      process.exit(1);
+    }
+  }
 
   return {
     environment,
