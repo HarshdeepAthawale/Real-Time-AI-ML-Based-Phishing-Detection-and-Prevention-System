@@ -231,8 +231,8 @@ See [docs/PROJECT_COMPLETION_STATUS.md](docs/PROJECT_COMPLETION_STATUS.md) for a
 **Quick status:** Backend services, frontend pages, browser extension, Docker setup, CI/CD, and documentation are complete. E2E smoke tests (`npm run test:e2e`) and sandbox disabled-state UX are implemented.
 
 ## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is proprietary. All rights reserved.
+See the LICENSE file for details.
 
 ---
 
