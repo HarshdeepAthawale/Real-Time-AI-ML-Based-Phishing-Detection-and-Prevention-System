@@ -59,3 +59,4 @@ external/
 
 # Cursor IDE
 .cursor/
+.cursor/plans
