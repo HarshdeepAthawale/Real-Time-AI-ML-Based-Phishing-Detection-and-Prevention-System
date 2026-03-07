@@ -56,3 +56,6 @@ backend/ml-services/**/*.csv
 
 # External cloned repositories (PhishIntention, URLNet, etc.)
 external/
+
+# Cursor IDE
+.cursor/
